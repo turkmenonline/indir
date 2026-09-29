@@ -42,13 +42,8 @@ class HistoryActivity : AppCompatActivity() {
         fun d(v: Int) = Ui.dp(this, v)
 
         // Üst başlık
-        val header = Ui.header(
-            this, "Geçmiş",
-            Ui.iconButton(this, R.drawable.ic_arrow_back, "Geri") { finish() },
-            null
-        )
+        val header = Ui.header(this, "Geçmiş", null, null)
 
-        // Geçmiş listesi
         adapter = HistoryAdapter()
         val list = ListView(this).apply {
             adapter = this@HistoryActivity.adapter
@@ -62,7 +57,7 @@ class HistoryActivity : AppCompatActivity() {
         }
         val empty = Ui.text(
             this,
-            "Henüz indirme geçmişi yok\nİndirdiğiniz dosyalar burada listelenir.",
+            "Henüz indirme yok\nYapılan indirmeler burada listelenir.",
             14f, Ui.mutedClr(this)
         ).apply {
             gravity = Gravity.CENTER
@@ -82,7 +77,7 @@ class HistoryActivity : AppCompatActivity() {
             addView(listHolder, Ui.lp(Ui.MATCH, 0, 1f))
         }
 
-        // 4 Sebepli Alt Bar: [İndir] • [Galeri] • [Geçmiş] • [Ayarlar]
+        // Floating Liquid Glass Bottom Navigation Bar (4 items: İndir, Galeri, Geçmiş, Ayarlar)
         val navItems = listOf(
             Ui.NavItem("İndir", R.drawable.ic_tab_download),
             Ui.NavItem("Galeri", R.drawable.ic_tab_gallery),
@@ -216,6 +211,14 @@ class HistoryActivity : AppCompatActivity() {
         adapter.notifyDataSetChanged()
     }
 
+    private fun start(text: String) {
+        val url = Regex("https?://\\S+").find(text)?.value
+        if (url == null) return
+        val i = Intent(this, DownloadService::class.java)
+        i.putExtra(DownloadService.EXTRA_URL, url)
+        startForegroundService(i)
+    }
+
     private fun showItem(h: JSONObject) {
         val url = h.getString("url")
         AlertDialog.Builder(this)
@@ -224,11 +227,5 @@ class HistoryActivity : AppCompatActivity() {
             .setPositiveButton("Tekrar dene") { _, _ -> start(url) }
             .setNegativeButton("Kapat", null)
             .show()
-    }
-
-    private fun start(url: String) {
-        val i = Intent(this, DownloadService::class.java)
-        i.putExtra(DownloadService.EXTRA_URL, url)
-        startForegroundService(i)
     }
 }

@@ -153,10 +153,10 @@ fun MainScreenPreview() {
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
-                                .background(Color(0xFFE1306C), RoundedCornerShape(20.dp)),
+                                .background(okBg, RoundedCornerShape(20.dp)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("IG", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("✓", color = okFg, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                         }
 
                         Spacer(modifier = Modifier.width(12.dp))
@@ -172,13 +172,6 @@ fun MainScreenPreview() {
                             Text(
                                 text = "/p/C123456789/",
                                 fontSize = 13.sp,
-                                fontFamily = SpaceGroteskFontFamily,
-                                color = muted
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Bugün 17:42",
-                                fontSize = 12.sp,
                                 fontFamily = SpaceGroteskFontFamily,
                                 color = muted
                             )

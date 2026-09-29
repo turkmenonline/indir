@@ -563,7 +563,7 @@ class SettingsActivity : AppCompatActivity() {
 
         // Geçmiş kartı
         val historyCard = Ui.card(this).apply {
-            addView(helper("Ana ekrandaki indirme listesini siler. Galerideki dosyalara dokunmaz."))
+            addView(helper("İndirme geçmişini ve kayıtlarını temizler. Galerideki dosyalara dokunmaz."))
             addView(
                 Ui.button(this@SettingsActivity, "Geçmişi temizle", Ui.Kind.DANGER) {
                     Store.clearHistory(this@SettingsActivity)
@@ -605,7 +605,7 @@ class SettingsActivity : AppCompatActivity() {
             addView(scroll, Ui.lp(Ui.MATCH, 0, 1f))
         }
 
-        // Floating Liquid Glass Bottom Navigation Bar
+        // Floating Liquid Glass Bottom Navigation Bar (4 items: İndir, Galeri, Geçmiş, Ayarlar)
         val navItems = listOf(
             Ui.NavItem("İndir", R.drawable.ic_tab_download),
             Ui.NavItem("Galeri", R.drawable.ic_tab_gallery),

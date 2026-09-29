@@ -2,8 +2,13 @@ package com.example.gdl
 
 import android.content.Context
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.net.toUri
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 object Store {
     const val THEME_SYSTEM = 0
@@ -49,20 +54,90 @@ object Store {
     @Synchronized
     fun upsert(c: Context, id: Long, url: String, status: String, log: String) {
         val list = history(c).toMutableList()
-        val existing = list.firstOrNull { it.optLong("id", 0L) == id }
-        val timestamp = existing?.optLong("timestamp", 0L)?.takeIf { it > 0 } ?: if (id > 0) id else System.currentTimeMillis()
-
         val o = JSONObject()
         o.put("id", id)
         o.put("url", url)
         o.put("status", status)
         o.put("log", log)
+        val idx = list.indexOfFirst { it.getLong("id") == id }
+        val timestamp = if (idx >= 0 && list[idx].has("timestamp")) {
+            list[idx].getLong("timestamp")
+        } else {
+            id
+        }
         o.put("timestamp", timestamp)
-        val idx = list.indexOfFirst { it.optLong("id", 0L) == id }
         if (idx >= 0) list[idx] = o else list.add(0, o)
         val arr = JSONArray()
         list.take(50).forEach { arr.put(it) }
         prefs(c).edit().putString("history", arr.toString()).apply()
+    }
+
+    fun getPlatformName(url: String): String {
+        val host = try {
+            url.toUri().host ?: url
+        } catch (_: Exception) {
+            url
+        }.lowercase().removePrefix("www.")
+
+        return when {
+            host.contains("instagram") -> "Instagram"
+            host.contains("youtube") || host.contains("youtu.be") -> "YouTube"
+            host.contains("tiktok") -> "TikTok"
+            host.contains("twitter") || host.contains("x.com") -> "X"
+            host.contains("pinterest") -> "Pinterest"
+            host.contains("reddit") -> "Reddit"
+            host.contains("facebook") || host.contains("fb.watch") -> "Facebook"
+            host.contains("twitch") -> "Twitch"
+            host.contains("spotify") -> "Spotify"
+            host.contains("soundcloud") -> "SoundCloud"
+            host.contains("vimeo") -> "Vimeo"
+            else -> {
+                val parts = host.split(".")
+                val name = if (parts.size >= 2) parts[parts.size - 2] else parts[0]
+                name.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+            }
+        }
+    }
+
+    fun getPlatformIconRes(platform: String): Int {
+        return when (platform.lowercase()) {
+            "instagram" -> R.drawable.ic_platform_instagram
+            "youtube" -> R.drawable.ic_platform_youtube
+            "tiktok" -> R.drawable.ic_platform_tiktok
+            "x", "twitter" -> R.drawable.ic_platform_x
+            else -> R.drawable.ic_platform_web
+        }
+    }
+
+    fun formatTimestamp(timeMs: Long): String {
+        if (timeMs <= 0L) return ""
+        val date = Date(timeMs)
+        val calendarNow = Calendar.getInstance()
+        val calendarTarget = Calendar.getInstance().apply { time = date }
+
+        val timeFormat = SimpleDateFormat("HH:mm", Locale("tr", "TR"))
+        val timeStr = timeFormat.format(date)
+
+        val isSameDay = calendarNow.get(Calendar.YEAR) == calendarTarget.get(Calendar.YEAR) &&
+                        calendarNow.get(Calendar.DAY_OF_YEAR) == calendarTarget.get(Calendar.DAY_OF_YEAR)
+
+        if (isSameDay) {
+            return "Bugün $timeStr"
+        }
+
+        val calendarYesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
+        val isYesterday = calendarYesterday.get(Calendar.YEAR) == calendarTarget.get(Calendar.YEAR) &&
+                          calendarYesterday.get(Calendar.DAY_OF_YEAR) == calendarTarget.get(Calendar.DAY_OF_YEAR)
+        if (isYesterday) {
+            return "Dün $timeStr"
+        }
+
+        val dateFormat = if (calendarNow.get(Calendar.YEAR) == calendarTarget.get(Calendar.YEAR)) {
+            SimpleDateFormat("d MMM, HH:mm", Locale("tr", "TR"))
+        } else {
+            SimpleDateFormat("d MMM yyyy, HH:mm", Locale("tr", "TR"))
+        }
+        return dateFormat.format(date)
     }
 
     @Synchronized

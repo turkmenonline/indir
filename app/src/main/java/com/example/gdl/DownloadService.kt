@@ -12,16 +12,12 @@ import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
-import android.media.MediaScannerConnection
-import android.net.Uri
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.provider.MediaStore
 import android.util.Log
 import android.webkit.MimeTypeMap
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import androidx.core.net.toUri
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import java.io.File
@@ -29,6 +25,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 class ProgressSink(private val f: (Int) -> Unit) {
+    @Suppress("unused")
     fun update(p: Int) {
         f(p)
     }
@@ -40,14 +37,8 @@ class DownloadService : Service() {
         const val CH_PROGRESS = "progress"
         const val CH_RESULT = "result"
         var onChange: (() -> Unit)? = null
+        private const val TAG = "DownloadService"
     }
-
-    private data class SavedMedia(
-        val uri: Uri,
-        val mimeType: String,
-        val isVideo: Boolean,
-        val file: File? = null
-    )
 
     private val executor = Executors.newSingleThreadExecutor()
     private val pending = AtomicInteger(0)
@@ -59,59 +50,22 @@ class DownloadService : Service() {
         super.onCreate()
         nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
-            NotificationChannel(CH_PROGRESS, "İndirme durumu", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Devam eden indirme işlemlerinin durumu"
-            }
+            NotificationChannel(CH_PROGRESS, "İndirme durumu", NotificationManager.IMPORTANCE_LOW)
         )
         nm.createNotificationChannel(
-            NotificationChannel(CH_RESULT, "İndirme sonucu", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Tamamlanan indirme bildirimleri"
-            }
+            NotificationChannel(CH_RESULT, "İndirme sonucu", NotificationManager.IMPORTANCE_DEFAULT)
         )
     }
 
-    private fun getPlatformName(url: String): String {
-        val lower = url.lowercase()
-        return when {
-            "instagram.com" in lower -> "Instagram"
-            "tiktok.com" in lower -> "TikTok"
-            "youtube.com" in lower || "youtu.be" in lower -> "YouTube"
-            "twitter.com" in lower || "x.com" in lower -> "X"
-            "facebook.com" in lower || "fb.watch" in lower -> "Facebook"
-            "pinterest.com" in lower || "pin.it" in lower -> "Pinterest"
-            "reddit.com" in lower -> "Reddit"
-            else -> {
-                try {
-                    val host = Uri.parse(url).host?.removePrefix("www.") ?: url
-                    val name = host.split(".").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "Web"
-                    if (name.length <= 1) "Web" else name
-                } catch (e: Exception) {
-                    "Web"
-                }
-            }
-        }
-    }
+    private fun getPlatformName(url: String): String = Store.getPlatformName(url)
 
-    private fun progressNotif(url: String?, text: String, pct: Int?): Notification {
-        val platform = if (url != null) getPlatformName(url) else null
-        val contentText = if (platform != null) {
-            if (pct != null && pct > 0) "$platform • %$pct" else "$platform • $text"
-        } else {
-            text
-        }
-
+    private fun progressNotif(platform: String, text: String, pct: Int?): Notification {
         val b = NotificationCompat.Builder(this, CH_PROGRESS)
             .setSmallIcon(R.drawable.stat_sys_download)
             .setContentTitle("İndiriliyor...")
-            .setContentText(contentText)
+            .setContentText(if (text.isNotEmpty()) "$platform • $text" else platform)
             .setOngoing(true)
-            .setOnlyAlertOnce(true)
-
-        if (pct != null && pct > 0) {
-            b.setProgress(100, pct, false)
-        } else {
-            b.setProgress(0, 0, true)
-        }
+        if (pct != null) b.setProgress(100, pct, false) else b.setProgress(0, 0, true)
         return b.build()
     }
 
@@ -123,44 +77,13 @@ class DownloadService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == "ACTION_DELETE") {
-            val uris = intent.getParcelableArrayListExtra<Uri>("uris")
-            val paths = intent.getStringArrayListExtra("paths")
-            val notifId = intent.getIntExtra("notif_id", -1)
-            if (notifId != -1) {
-                nm.cancel(notifId)
-            }
-            executor.execute {
-                if (uris != null) {
-                    for (uri in uris) {
-                        try {
-                            contentResolver.delete(uri, null, null)
-                        } catch (_: Exception) {}
-                    }
-                }
-                if (paths != null) {
-                    for (path in paths) {
-                        try {
-                            val file = File(path)
-                            if (file.exists()) file.delete()
-                            MediaScannerConnection.scanFile(this, arrayOf(path), null, null)
-                        } catch (_: Exception) {}
-                    }
-                }
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(this@DownloadService, "Dosya silindi", Toast.LENGTH_SHORT).show()
-                }
-            }
-            stopIfIdle()
-            return START_NOT_STICKY
-        }
-
+        val url = intent?.getStringExtra(EXTRA_URL)
+        val platform = url?.let { getPlatformName(it) } ?: "İndiriliyor"
         startForeground(
             1,
-            progressNotif(null, "Hazırlanıyor…", null),
+            progressNotif(platform, "Hazırlanıyor…", null),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         )
-        val url = intent?.getStringExtra(EXTRA_URL)
         if (url == null) {
             stopIfIdle()
             return START_NOT_STICKY
@@ -180,17 +103,19 @@ class DownloadService : Service() {
     }
 
     private fun process(id: Long, url: String) {
+        val platform = getPlatformName(url)
         Store.upsert(this, id, url, "İndiriliyor", "")
         onChange?.invoke()
-        nm.notify(1, progressNotif(url, "Bağlanılıyor…", null))
+        nm.notify(1, progressNotif(platform, "İndiriliyor...", null))
 
         val dir = File(cacheDir, "dl_$id").apply { mkdirs() }
         val cookieTmp = File(cacheDir, "cookies_job.txt")
-        var log = ""
-        val savedMedias = mutableListOf<SavedMedia>()
+        var log: String
+        var saved = 0
         var savedImages = 0
         var savedVideos = 0
-        var firstPreviewBitmap: Bitmap? = null
+        val savedFiles = mutableListOf<File>()
+        var thumbnailBitmap: Bitmap? = null
 
         try {
             if (!Python.isStarted()) Python.start(AndroidPlatform(this))
@@ -201,7 +126,7 @@ class DownloadService : Service() {
                 cookiePath = cookieTmp.absolutePath
             }
             val sink = ProgressSink { p ->
-                nm.notify(1, progressNotif(url, "%$p", p))
+                nm.notify(1, progressNotif(platform, "$p%", p))
             }
             val updatesDir = File(filesDir, "python_updates")
             val updatesPath = if (updatesDir.exists()) updatesDir.absolutePath else ""
@@ -209,194 +134,159 @@ class DownloadService : Service() {
                 .callAttr("run", url, dir.absolutePath, cookiePath, Store.template(this), sink, updatesPath)
                 .toString()
 
-            val downloadedFiles = dir.walkTopDown().filter { it.isFile }.toList()
-            for (f in downloadedFiles) {
-                val media = save(f)
-                if (media != null) {
-                    savedMedias.add(media)
-                    if (media.isVideo) savedVideos++ else savedImages++
-                    if (firstPreviewBitmap == null) {
-                        firstPreviewBitmap = getPreviewBitmap(f)
+            for (f in dir.walkTopDown().filter { it.isFile }) {
+                val mime = MimeTypeMap.getSingleton()
+                    .getMimeTypeFromExtension(f.extension.lowercase())
+                if (mime != null) {
+                    val video = mime.startsWith("video")
+                    val image = mime.startsWith("image")
+                    if (video || image) {
+                        if (save(f)) {
+                            savedFiles.add(f)
+                            if (video) savedVideos++
+                            if (image) savedImages++
+                        }
                     }
                 }
             }
+            saved = savedFiles.size
+            if (saved > 0) {
+                val thumbFile = savedFiles.first()
+                Log.d(TAG, "Loading thumbnail from file: ${thumbFile.absolutePath}, exists=${thumbFile.exists()}, length=${thumbFile.length()}")
+                thumbnailBitmap = loadThumbnail(thumbFile)
+            }
         } catch (e: Exception) {
             log = "Hata: ${e.message}"
-            Log.e("DownloadService", "İndirme istisnası: ${e.message}", e)
-            Handler(Looper.getMainLooper()).post {
-                Toast.makeText(this@DownloadService, "İndirme hatası: ${e.message}", Toast.LENGTH_LONG).show()
-            }
+            Log.e(TAG, "Process error: ${e.message}", e)
         } finally {
             dir.deleteRecursively()
             cookieTmp.delete()
         }
 
-        val totalSaved = savedMedias.size
-        val ok = totalSaved > 0
-        val status = if (ok) "✓ $totalSaved dosya kaydedildi" else "✗ İndirilemedi"
+        val ok = saved > 0
+        val status = if (ok) "✓ $saved dosya kaydedildi" else "✗ İndirilemedi"
         Store.upsert(this, id, url, status, log.takeLast(3000))
         onChange?.invoke()
 
-        if (!ok) {
-            val errorMsg = log.ifEmpty { "Dosya indirilemedi veya bağlantı hatası." }
-            Log.e("DownloadService", "İndirme başarısız: $errorMsg")
-            Handler(Looper.getMainLooper()).post {
-                Toast.makeText(this@DownloadService, "İndirme başarısız: ${errorMsg.take(150)}", Toast.LENGTH_LONG).show()
-            }
+        val detailText = when {
+            (savedImages > 0) && (savedVideos == 0) -> if (savedImages == 1) "1 fotoğraf galeriye kaydedildi" else "$savedImages fotoğraf galeriye kaydedildi"
+            (savedImages == 0) && (savedVideos > 0) -> if (savedVideos == 1) "1 video galeriye kaydedildi" else "$savedVideos video galeriye kaydedildi"
+            else -> if (saved == 1) "1 dosya galeriye kaydedildi" else "$saved dosya galeriye kaydedildi"
         }
+        val contentText = if (ok) "$platform • $detailText" else "$platform • İndirilemedi"
 
-        val platform = getPlatformName(url)
-        val titleText = if (ok) "İndirme Tamamlandı" else "İndirme Başarısız"
-
-        val contentText = if (ok) {
-            val mediaDetail = when {
-                savedImages > 0 && savedVideos == 0 -> {
-                    if (savedImages == 1) "1 fotoğraf galeriye kaydedildi"
-                    else "$savedImages fotoğraf galeriye kaydedildi"
-                }
-                savedVideos > 0 && savedImages == 0 -> {
-                    if (savedVideos == 1) "1 video galeriye kaydedildi"
-                    else "$savedVideos video galeriye kaydedildi"
-                }
-                else -> {
-                    if (totalSaved == 1) "1 dosya galeriye kaydedildi"
-                    else "$totalSaved dosya galeriye kaydedildi"
-                }
-            }
-            "$platform • $mediaDetail"
-        } else {
-            "$platform • İndirme gerçekleştirilemedi"
-        }
-
-        val galleryIntent = Intent(this, GalleryActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val galleryPendingIntent = PendingIntent.getActivity(
-            this,
-            (id % 100000).toInt() + 100,
-            galleryIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val pi = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notifBuilder = NotificationCompat.Builder(this, CH_RESULT)
+        val builder = NotificationCompat.Builder(this, CH_RESULT)
             .setSmallIcon(
                 if (ok) R.drawable.stat_sys_download_done
                 else R.drawable.stat_notify_error
             )
-            .setContentTitle(titleText)
+            .setContentTitle(if (ok) "İndirme Tamamlandı" else "İndirme Başarısız")
             .setContentText(contentText)
-            .setContentIntent(galleryPendingIntent)
+            .setContentIntent(pi)
             .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
 
-        if (ok) {
-            if (firstPreviewBitmap != null) {
-                notifBuilder.setLargeIcon(firstPreviewBitmap)
-                notifBuilder.setStyle(
-                    NotificationCompat.BigPictureStyle()
-                        .bigPicture(firstPreviewBitmap)
-                        .bigLargeIcon(null as Bitmap?)
-                )
-            }
-
-            // Quick Action 1: Görüntüle
-            notifBuilder.addAction(
-                R.drawable.ic_menu_gallery,
-                "Görüntüle",
-                galleryPendingIntent
-            )
-
-            // Quick Action 2: Paylaş
-            val shareUris = ArrayList(savedMedias.map { it.uri })
-            if (shareUris.isNotEmpty()) {
-                val shareIntent = if (shareUris.size == 1) {
-                    Intent(Intent.ACTION_SEND).apply {
-                        type = savedMedias.first().mimeType
-                        putExtra(Intent.EXTRA_STREAM, shareUris[0])
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                } else {
-                    Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-                        type = "*/*"
-                        putParcelableArrayListExtra(Intent.EXTRA_STREAM, shareUris)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                }
-                val chooserIntent = Intent.createChooser(shareIntent, "Medya Paylaş").apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                val sharePendingIntent = PendingIntent.getActivity(
-                    this,
-                    (id % 100000).toInt() + 200,
-                    chooserIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                notifBuilder.addAction(
-                    R.drawable.ic_menu_share,
-                    "Paylaş",
-                    sharePendingIntent
-                )
-            }
-
-            // Quick Action 3: Sil
-            val deleteIntent = Intent(this, DownloadService::class.java).apply {
-                action = "ACTION_DELETE"
-                putParcelableArrayListExtra("uris", ArrayList(savedMedias.map { it.uri }))
-                putStringArrayListExtra("paths", ArrayList(savedMedias.mapNotNull { it.file?.absolutePath }))
-                putExtra("notif_id", (id % 100000).toInt() + 10)
-            }
-            val deletePendingIntent = PendingIntent.getService(
-                this,
-                (id % 100000).toInt() + 300,
-                deleteIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            notifBuilder.addAction(
-                R.drawable.ic_menu_delete,
-                "Sil",
-                deletePendingIntent
-            )
+        if (ok && thumbnailBitmap != null) {
+            builder.setLargeIcon(thumbnailBitmap)
+            val bigPicStyle = NotificationCompat.BigPictureStyle()
+                .bigPicture(thumbnailBitmap)
+                .bigLargeIcon(null as Bitmap?)
+                .setSummaryText(contentText)
+            builder.setStyle(bigPicStyle)
+            Log.d(TAG, "BigPictureStyle successfully applied to notification.")
+        } else {
+            Log.w(TAG, "Thumbnail bitmap is null or download failed, skipping BigPictureStyle.")
         }
 
-        nm.notify((id % 100000).toInt() + 10, notifBuilder.build())
+        nm.notify((id % 100000).toInt() + 10, builder.build())
     }
 
-    private fun getPreviewBitmap(file: File): Bitmap? {
+    private fun loadThumbnail(f: File): Bitmap? {
+        if (!f.exists() || f.length() == 0L) {
+            Log.w(TAG, "Thumbnail file does not exist or is empty: ${f.absolutePath}")
+            return null
+        }
+        val mime = MimeTypeMap.getSingleton()
+            .getMimeTypeFromExtension(f.extension.lowercase()) ?: ""
         return try {
-            val mime = MimeTypeMap.getSingleton()
-                .getMimeTypeFromExtension(file.extension.lowercase()) ?: ""
-            if (mime.startsWith("video")) {
+            val bmp = if (mime.startsWith("image")) {
+                decodeAndScaleBitmap(f.absolutePath)
+            } else if (mime.startsWith("video")) {
                 val retriever = MediaMetadataRetriever()
-                retriever.setDataSource(file.absolutePath)
-                val frame = retriever.frameAtTime
-                retriever.release()
-                frame
-            } else if (mime.startsWith("image")) {
-                val options = BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
+                try {
+                    retriever.setDataSource(f.absolutePath)
+                    val rawBmp = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                        ?: retriever.frameAtTime
+                    rawBmp?.let { scaleBitmap(it, 1080, 720) }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error extracting video thumbnail: ${e.message}", e)
+                    null
+                } finally {
+                    retriever.release()
                 }
-                BitmapFactory.decodeFile(file.absolutePath, options)
-                var sampleSize = 1
-                val maxDim = 1024
-                while (options.outWidth / sampleSize > maxDim || options.outHeight / sampleSize > maxDim) {
-                    sampleSize *= 2
-                }
-                val decodeOptions = BitmapFactory.Options().apply {
-                    inSampleSize = sampleSize
-                }
-                BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
             } else {
                 null
             }
+            if (bmp == null) {
+                Log.w(TAG, "Bitmap decoded as null for file: ${f.absolutePath}, mime: $mime")
+            } else {
+                Log.d(TAG, "Bitmap successfully loaded and scaled: ${bmp.width}x${bmp.height}")
+            }
+            bmp
         } catch (e: Exception) {
+            Log.e(TAG, "Error loading thumbnail: ${e.message}", e)
             null
         }
     }
 
-    private fun save(f: File): SavedMedia? {
+    private fun decodeAndScaleBitmap(filePath: String): Bitmap? {
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeFile(filePath, options)
+        if (options.outWidth <= 0 || options.outHeight <= 0) return null
+
+        val maxWidth = 1080
+        val maxHeight = 720
+        var inSampleSize = 1
+        val halfWidth = options.outWidth / 2
+        val halfHeight = options.outHeight / 2
+        while ((halfWidth / inSampleSize) >= maxWidth && (halfHeight / inSampleSize) >= maxHeight) {
+            inSampleSize *= 2
+        }
+
+        val decodeOptions = BitmapFactory.Options().apply {
+            this.inSampleSize = inSampleSize
+        }
+        val decoded = BitmapFactory.decodeFile(filePath, decodeOptions) ?: return null
+        return scaleBitmap(decoded, maxWidth, maxHeight)
+    }
+
+    private fun scaleBitmap(bmp: Bitmap, maxWidth: Int, maxHeight: Int): Bitmap {
+        val width = bmp.width
+        val height = bmp.height
+        if (width <= maxWidth && height <= maxHeight) return bmp
+
+        val ratio = width.toFloat() / height.toFloat()
+        var targetWidth = maxWidth
+        var targetHeight = maxHeight
+        if (ratio > 1) {
+            targetHeight = (maxWidth / ratio).toInt()
+        } else {
+            targetWidth = (maxHeight * ratio).toInt()
+        }
+        return Bitmap.createScaledBitmap(bmp, targetWidth, targetHeight, true)
+    }
+
+    private fun save(f: File): Boolean {
         val mime = MimeTypeMap.getSingleton()
-            .getMimeTypeFromExtension(f.extension.lowercase()) ?: return null
+            .getMimeTypeFromExtension(f.extension.lowercase()) ?: return false
         val video = mime.startsWith("video")
-        if (!video && !mime.startsWith("image")) return null
+        if (!video && !mime.startsWith("image")) return false
         val album = Store.album(this)
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, f.name)
@@ -408,10 +298,10 @@ class DownloadService : Service() {
         }
         val collection = if (video) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        val uri = contentResolver.insert(collection, values) ?: return null
+        val uri = contentResolver.insert(collection, values) ?: return false
         contentResolver.openOutputStream(uri)?.use { o ->
             f.inputStream().use { it.copyTo(o) }
         }
-        return SavedMedia(uri, mime, video, f)
+        return true
     }
 }

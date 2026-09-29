@@ -58,21 +58,15 @@ class MainActivity : AppCompatActivity() {
             addView(buttons, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12)))
         }
 
-        val centerContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(inputCard, Ui.lp(Ui.MATCH, Ui.WRAP))
-        }
-
         val mainContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.bg(this@MainActivity))
-            setPadding(d(16), 0, d(16), d(84))
+            setPadding(d(16), 0, d(16), 0)
             addView(header, Ui.lp(Ui.MATCH, Ui.WRAP))
-            addView(centerContainer, Ui.lp(Ui.MATCH, 0, 1f))
+            addView(inputCard, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(16)))
         }
 
-        // 4 Sebepli Alt Bar: [İndir] • [Galeri] • [Geçmiş] • [Ayarlar]
+        // Floating Liquid Glass Bottom Navigation Bar (4 items)
         val navItems = listOf(
             Ui.NavItem("İndir", R.drawable.ic_tab_download),
             Ui.NavItem("Galeri", R.drawable.ic_tab_gallery),
@@ -104,12 +98,6 @@ class MainActivity : AppCompatActivity() {
         }
         setContentView(root)
         Ui.setupEdgeToEdge(this, root)
-    }
-
-    @Suppress("DEPRECATION")
-    override fun finish() {
-        super.finish()
-        overridePendingTransition(0, 0)
     }
 
     @Suppress("DEPRECATION")

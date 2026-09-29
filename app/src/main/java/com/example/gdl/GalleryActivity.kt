@@ -1,20 +1,13 @@
 package com.example.gdl
 
-import android.app.AlertDialog
 import android.app.Dialog
 import android.content.ContentUris
-import android.content.Context
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.Matrix
-import android.graphics.PointF
 import android.graphics.drawable.ColorDrawable
-import android.graphics.drawable.Drawable
 import android.media.MediaMetadataRetriever
-import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -24,10 +17,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.util.LruCache
 import android.util.Size
-import android.view.GestureDetector
 import android.view.Gravity
-import android.view.MotionEvent
-import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
@@ -40,11 +30,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.MediaController
 import android.widget.TextView
-import android.widget.Toast
 import android.widget.VideoView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.AppCompatImageView
-import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -148,7 +135,7 @@ class GalleryActivity : AppCompatActivity() {
             addView(gridHolder, Ui.lp(Ui.MATCH, 0, 1f))
         }
 
-        // Floating Liquid Glass Bottom Navigation Bar
+        // Floating Liquid Glass Bottom Navigation Bar (4 items: İndir, Galeri, Geçmiş, Ayarlar)
         val navItems = listOf(
             Ui.NavItem("İndir", R.drawable.ic_tab_download),
             Ui.NavItem("Galeri", R.drawable.ic_tab_gallery),
@@ -229,8 +216,8 @@ class GalleryActivity : AppCompatActivity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun openSettings() {
-        val intent = Intent(this, SettingsActivity::class.java).apply {
+    private fun openHistory() {
+        val intent = Intent(this, HistoryActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION
         }
         startActivity(intent)
@@ -238,8 +225,8 @@ class GalleryActivity : AppCompatActivity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun openHistory() {
-        val intent = Intent(this, HistoryActivity::class.java).apply {
+    private fun openSettings() {
+        val intent = Intent(this, SettingsActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION
         }
         startActivity(intent)
@@ -415,6 +402,7 @@ class GalleryActivity : AppCompatActivity() {
             setBackgroundDrawable(ColorDrawable(Color.BLACK))
             statusBarColor = Color.BLACK
             navigationBarColor = Color.BLACK
+            // Pencere durum çubuğu ve kamera çentiği alanına da taşsın (üstteki şerit hatasının çözümü)
             addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 attributes = attributes.apply {
@@ -449,7 +437,7 @@ class GalleryActivity : AppCompatActivity() {
             )
         )
 
-        // Top Bar Container: Clean header with Close button (X) on left, position indicator in middle, balanced empty view on right
+        // Top Bar Container: Clean header with Close button (X) on left, single-piece position indicator in middle
         val btnSize = Ui.dp(this, 40)
         val pH = Ui.dp(this, 16)
         val pV = Ui.dp(this, 12)
@@ -513,189 +501,8 @@ class GalleryActivity : AppCompatActivity() {
             )
         )
 
-        // Bottom Floating Liquid Glass Capsule (Apple Photos Style)
-        val shareIcon = ImageView(this).apply {
-            setImageResource(R.drawable.ic_apple_share)
-            imageTintList = ColorStateList.valueOf(Color.WHITE)
-            scaleType = ImageView.ScaleType.CENTER
-        }
-        val shareCell = LinearLayout(this).apply {
-            gravity = Gravity.CENTER
-            val r = Ui.dp(this@GalleryActivity, 22).toFloat()
-            background = Ui.ripple(Ui.shape(Color.TRANSPARENT, r), r)
-            addView(shareIcon, LinearLayout.LayoutParams(Ui.dp(this@GalleryActivity, 24), Ui.dp(this@GalleryActivity, 24)))
-            setOnClickListener {
-                val pos = viewPager.currentItem
-                if (pos in mediaList.indices) {
-                    shareMedia(mediaList[pos])
-                }
-            }
-        }
-
-        val trashIcon = ImageView(this).apply {
-            setImageResource(R.drawable.ic_apple_trash)
-            imageTintList = ColorStateList.valueOf(Color.WHITE)
-            scaleType = ImageView.ScaleType.CENTER
-        }
-        val trashCell = LinearLayout(this).apply {
-            gravity = Gravity.CENTER
-            val r = Ui.dp(this@GalleryActivity, 22).toFloat()
-            background = Ui.ripple(Ui.shape(Color.TRANSPARENT, r), r)
-            addView(trashIcon, LinearLayout.LayoutParams(Ui.dp(this@GalleryActivity, 24), Ui.dp(this@GalleryActivity, 24)))
-            setOnClickListener {
-                val pos = viewPager.currentItem
-                if (pos in mediaList.indices) {
-                    showDeleteConfirmationDialog(pos, dialog, viewPager, pageIndicator)
-                }
-            }
-        }
-
-        val bottomCapsule = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            val pCapV = Ui.dp(this@GalleryActivity, 8)
-            val pCapH = Ui.dp(this@GalleryActivity, 16)
-            setPadding(pCapH, pCapV, pCapH, pCapV)
-
-            val glassBg = Color.parseColor("#CC1A1A24")
-            val strokeColor = Color.parseColor("#33FFFFFF")
-            background = Ui.shape(glassBg, 999f, strokeColor, Ui.dp(this@GalleryActivity, 1))
-            elevation = Ui.dp(this@GalleryActivity, 10).toFloat()
-
-            val btnW = Ui.dp(this@GalleryActivity, 64)
-            val btnH = Ui.dp(this@GalleryActivity, 44)
-            addView(shareCell, LinearLayout.LayoutParams(btnW, btnH))
-            addView(trashCell, LinearLayout.LayoutParams(btnW, btnH).apply {
-                setMargins(Ui.dp(this@GalleryActivity, 8), 0, 0, 0)
-            })
-        }
-
-        val capsuleHolder = FrameLayout(this).apply {
-            setBackgroundColor(Color.TRANSPARENT)
-            addView(
-                bottomCapsule,
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.CENTER_HORIZONTAL
-                )
-            )
-        }
-
-        ViewCompat.setOnApplyWindowInsetsListener(capsuleHolder) { v, insets ->
-            val navBottom = insets.getInsets(
-                WindowInsetsCompat.Type.navigationBars() or WindowInsetsCompat.Type.tappableElement()
-            ).bottom
-            val lp = v.layoutParams as FrameLayout.LayoutParams
-            lp.bottomMargin = Ui.dp(this@GalleryActivity, 20) + navBottom
-            v.layoutParams = lp
-            insets
-        }
-
-        root.addView(
-            capsuleHolder,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            )
-        )
-
         dialog.setContentView(root)
         dialog.show()
-    }
-
-    private fun shareMedia(item: MediaItem) {
-        try {
-            val file = item.file
-            val uri = if (file != null && file.exists()) {
-                FileProvider.getUriForFile(this, "${packageName}.fileprovider", file)
-            } else {
-                item.uri
-            }
-            if (uri != null) {
-                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = if (item.isVideo) "video/*" else "image/*"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                startActivity(Intent.createChooser(shareIntent, "Fotoğrafı Paylaş"))
-            } else {
-                Toast.makeText(this, "Paylaşılabilecek dosya bulunamadı", Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            Toast.makeText(this, "Paylaşım hatası: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun showDeleteConfirmationDialog(
-        position: Int,
-        fullscreenDialog: Dialog,
-        viewPager: ViewPager2,
-        pageIndicator: TextView
-    ) {
-        if (position !in mediaList.indices) return
-
-        AlertDialog.Builder(this)
-            .setTitle("Fotoğrafı Sil")
-            .setMessage("Bu fotoğrafı silmek istiyor musunuz?")
-            .setPositiveButton("Sil") { _, _ ->
-                performDeleteMedia(position, fullscreenDialog, viewPager, pageIndicator)
-            }
-            .setNegativeButton("İptal", null)
-            .show()
-    }
-
-    private fun performDeleteMedia(
-        position: Int,
-        fullscreenDialog: Dialog,
-        viewPager: ViewPager2,
-        pageIndicator: TextView
-    ) {
-        if (position !in mediaList.indices) return
-        val item = mediaList[position]
-
-        try {
-            val file = item.file
-            if (file != null && file.exists()) {
-                file.delete()
-                if (item.uri != null) {
-                    try {
-                        contentResolver.delete(item.uri, null, null)
-                    } catch (_: Exception) {}
-                }
-                MediaScannerConnection.scanFile(
-                    this,
-                    arrayOf(file.absolutePath),
-                    null
-                ) { _, _ -> }
-            } else if (item.uri != null) {
-                try {
-                    contentResolver.delete(item.uri, null, null)
-                } catch (_: Exception) {}
-            }
-
-            Toast.makeText(this, "Fotoğraf silindi", Toast.LENGTH_SHORT).show()
-
-            // Remove from list and update adapter
-            val mutableList = mediaList.toMutableList()
-            if (position in mutableList.indices) {
-                mutableList.removeAt(position)
-            }
-            mediaList = mutableList
-            adapter.notifyDataSetChanged()
-
-            if (mediaList.isEmpty()) {
-                fullscreenDialog.dismiss()
-            } else {
-                viewPager.adapter = PreviewPagerAdapter()
-                val newPos = if (position >= mediaList.size) mediaList.size - 1 else position
-                viewPager.setCurrentItem(newPos, false)
-                pageIndicator.text = "${newPos + 1}/${mediaList.size}"
-            }
-        } catch (e: Exception) {
-            Toast.makeText(this, "Silme hatası: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-        }
     }
 
     private inner class PreviewPagerAdapter : RecyclerView.Adapter<PreviewViewHolder>() {
@@ -734,7 +541,9 @@ class GalleryActivity : AppCompatActivity() {
                 container.addView(videoView, lp)
                 videoView.start()
             } else {
-                val imgView = ZoomableImageView(container.context)
+                val imgView = ImageView(container.context).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                }
                 container.addView(imgView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
                 // Load Full Image Asynchronously
@@ -755,202 +564,6 @@ class GalleryActivity : AppCompatActivity() {
                     }
                 }
             }
-        }
-    }
-
-    private class ZoomableImageView(context: Context) : AppCompatImageView(context) {
-        private val matrix = Matrix()
-        private val savedMatrix = Matrix()
-        private var mode = NONE
-
-        private val point = PointF()
-        private var saveScale = 1f
-        private var minScale = 1f
-        private var maxScale = 4f
-        private var computedFitScale = 1f
-
-        private var origWidth = 0f
-        private var origHeight = 0f
-        private var viewWidth = 0f
-        private var viewHeight = 0f
-
-        private val scaleDetector: ScaleGestureDetector
-        private val gestureDetector: GestureDetector
-
-        companion object {
-            private const val NONE = 0
-            private const val DRAG = 1
-            private const val ZOOM = 2
-        }
-
-        init {
-            scaleType = ScaleType.MATRIX
-            scaleDetector = ScaleGestureDetector(context, ScaleListener())
-            gestureDetector = GestureDetector(context, GestureListener())
-        }
-
-        private inner class ScaleListener : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
-                mode = ZOOM
-                return true
-            }
-
-            override fun onScale(detector: ScaleGestureDetector): Boolean {
-                var mScaleFactor = detector.scaleFactor
-                val origScale = saveScale
-                saveScale *= mScaleFactor
-                if (saveScale > maxScale) {
-                    saveScale = maxScale
-                    mScaleFactor = maxScale / origScale
-                } else if (saveScale < minScale) {
-                    saveScale = minScale
-                    mScaleFactor = minScale / origScale
-                }
-
-                if (origWidth * saveScale <= viewWidth || origHeight * saveScale <= viewHeight) {
-                    matrix.postScale(mScaleFactor, mScaleFactor, viewWidth / 2f, viewHeight / 2f)
-                } else {
-                    matrix.postScale(mScaleFactor, mScaleFactor, detector.focusX, detector.focusY)
-                }
-                fixTranslation()
-                imageMatrix = matrix
-                return true
-            }
-        }
-
-        private inner class GestureListener : GestureDetector.SimpleOnGestureListener() {
-            override fun onDoubleTap(e: MotionEvent): Boolean {
-                val targetScale = if (saveScale > minScale + 0.1f) minScale else maxScale.coerceAtMost(2.5f)
-                val mScaleFactor = targetScale / saveScale
-                saveScale = targetScale
-                matrix.postScale(mScaleFactor, mScaleFactor, e.x, e.y)
-                fixTranslation()
-                imageMatrix = matrix
-                return true
-            }
-        }
-
-        override fun setImageBitmap(bm: Bitmap?) {
-            super.setImageBitmap(bm)
-            if (bm != null) {
-                origWidth = bm.width.toFloat()
-                origHeight = bm.height.toFloat()
-                fitImageToView()
-            }
-        }
-
-        override fun setImageDrawable(drawable: Drawable?) {
-            super.setImageDrawable(drawable)
-            if (drawable != null) {
-                origWidth = drawable.intrinsicWidth.toFloat()
-                origHeight = drawable.intrinsicHeight.toFloat()
-                if (origWidth <= 0) origWidth = 100f
-                if (origHeight <= 0) origHeight = 100f
-                fitImageToView()
-            }
-        }
-
-        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-            super.onSizeChanged(w, h, oldw, oldh)
-            viewWidth = w.toFloat()
-            viewHeight = h.toFloat()
-            fitImageToView()
-        }
-
-        private fun fitImageToView() {
-            if (viewWidth <= 0 || viewHeight <= 0 || origWidth <= 0 || origHeight <= 0) return
-            val scaleX = viewWidth / origWidth
-            val scaleY = viewHeight / origHeight
-            computedFitScale = scaleX.coerceAtMost(scaleY)
-            minScale = computedFitScale
-            saveScale = minScale
-
-            matrix.reset()
-            matrix.postScale(computedFitScale, computedFitScale)
-            val redundantX = (viewWidth - (origWidth * computedFitScale)) / 2f
-            val redundantY = (viewHeight - (origHeight * computedFitScale)) / 2f
-            matrix.postTranslate(redundantX, redundantY)
-            imageMatrix = matrix
-        }
-
-        private fun fixTranslation() {
-            matrix.getValues(m)
-            val transX = m[Matrix.MTRANS_X]
-            val transY = m[Matrix.MTRANS_Y]
-
-            val fixX = getFitTranslation(transX, viewWidth, origWidth * saveScale)
-            val fixY = getFitTranslation(transY, viewHeight, origHeight * saveScale)
-
-            if (fixX != 0f || fixY != 0f) {
-                matrix.postTranslate(fixX, fixY)
-            }
-        }
-
-        private fun getFitTranslation(trans: Float, viewSize: Float, contentSize: Float): Float {
-            val minTrans: Float
-            val maxTrans: Float
-
-            if (contentSize <= viewSize) {
-                minTrans = 0f
-                maxTrans = viewSize - contentSize
-            } else {
-                minTrans = viewSize - contentSize
-                maxTrans = 0f
-            }
-
-            if (trans < minTrans) {
-                return minTrans - trans
-            }
-            if (trans > maxTrans) {
-                return maxTrans - trans
-            }
-            return 0f
-        }
-
-        private val m = FloatArray(9)
-
-        override fun onTouchEvent(event: MotionEvent): Boolean {
-            scaleDetector.onTouchEvent(event)
-            gestureDetector.onTouchEvent(event)
-
-            val curr = PointF(event.x, event.y)
-
-            when (event.action and MotionEvent.ACTION_MASK) {
-                MotionEvent.ACTION_DOWN -> {
-                    performClick()
-                    savedMatrix.set(matrix)
-                    point.set(curr)
-                    mode = DRAG
-                    if (saveScale > minScale + 0.05f) {
-                        parent?.requestDisallowInterceptTouchEvent(true)
-                    }
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
-                    mode = NONE
-                    if (saveScale <= minScale + 0.05f) {
-                        parent?.requestDisallowInterceptTouchEvent(false)
-                        fitImageToView()
-                    }
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    if (mode == DRAG) {
-                        val deltaX = curr.x - point.x
-                        val deltaY = curr.y - point.y
-
-                        matrix.set(savedMatrix)
-                        matrix.postTranslate(deltaX, deltaY)
-                        fixTranslation()
-                        imageMatrix = matrix
-
-                        if (saveScale > minScale + 0.05f) {
-                            parent?.requestDisallowInterceptTouchEvent(true)
-                        } else {
-                            parent?.requestDisallowInterceptTouchEvent(false)
-                        }
-                    }
-                }
-            }
-            return true
         }
     }
 }
