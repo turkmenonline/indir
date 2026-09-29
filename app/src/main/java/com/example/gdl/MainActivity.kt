@@ -1,7 +1,6 @@
 package com.example.gdl
 
 import android.Manifest
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipboardManager
 import android.content.Intent
@@ -10,12 +9,15 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.widget.AbsListView
 import android.widget.BaseAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -23,9 +25,10 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONObject
 
-class MainActivity : Activity() {
+class MainActivity : AppCompatActivity() {
     private lateinit var input: EditText
     private lateinit var adapter: HistoryAdapter
     private var hist: List<JSONObject> = emptyList()
@@ -42,7 +45,11 @@ class MainActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        try {
+            Store.applyTheme(this)
+        } catch (_: Throwable) {}
         super.onCreate(savedInstanceState)
+
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -78,7 +85,7 @@ class MainActivity : Activity() {
         }
 
         // Geçmiş listesi
-        val sectionTitle = Ui.text(this, "Son indirmeler", 13f, Ui.MUTED, true)
+        val sectionTitle = Ui.text(this, "Son indirmeler", 13f, Ui.mutedClr(this), true)
 
         adapter = HistoryAdapter()
         val list = ListView(this).apply {
@@ -94,7 +101,7 @@ class MainActivity : Activity() {
         val empty = Ui.text(
             this,
             "Henüz indirme yok\nBir link yapıştır ya da başka bir uygulamadan Paylaş → İNDİR seç.",
-            14f, Ui.MUTED
+            14f, Ui.mutedClr(this)
         ).apply {
             gravity = Gravity.CENTER
             setPadding(d(24), 0, d(24), d(84))
@@ -107,7 +114,7 @@ class MainActivity : Activity() {
 
         val mainContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Ui.BG)
+            setBackgroundColor(Ui.bg(this@MainActivity))
             setPadding(d(16), 0, d(16), 0)
             addView(header, Ui.lp(Ui.MATCH, Ui.WRAP))
             addView(inputCard, Ui.lp(Ui.MATCH, Ui.WRAP))
@@ -126,41 +133,94 @@ class MainActivity : Activity() {
             when (index) {
                 0 -> { /* Zaten İndir ekranındayız */ }
                 1 -> openGallery()
-                2 -> startActivity(Intent(this, SettingsActivity::class.java))
+                2 -> openSettings()
             }
         }
 
         val navParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
         ).apply {
-            setMargins(d(20), 0, d(20), d(20))
+            setMargins(d(28), 0, d(28), d(20))
         }
 
+        val scrollHandler = Handler(Looper.getMainLooper())
+        val showBarRunnable = Runnable {
+            navBar.animate()
+                .translationY(0f)
+                .alpha(1f)
+                .setDuration(250)
+                .start()
+        }
+
+        var lastFirstVisibleItem = 0
+        var lastTop = 0
+        list.setOnScrollListener(object : AbsListView.OnScrollListener {
+            override fun onScrollStateChanged(view: AbsListView?, scrollState: Int) {
+                if (scrollState == AbsListView.OnScrollListener.SCROLL_STATE_IDLE) {
+                    scrollHandler.removeCallbacks(showBarRunnable)
+                    scrollHandler.postDelayed(showBarRunnable, 200)
+                }
+            }
+
+            override fun onScroll(view: AbsListView?, firstVisibleItem: Int, visibleItemCount: Int, totalItemCount: Int) {
+                scrollHandler.removeCallbacks(showBarRunnable)
+                scrollHandler.postDelayed(showBarRunnable, 400)
+
+                val firstChild = view?.getChildAt(0) ?: return
+                val top = firstChild.top
+                val isScrollingDown = if (firstVisibleItem == lastFirstVisibleItem) {
+                    top < lastTop
+                } else {
+                    firstVisibleItem > lastFirstVisibleItem
+                }
+
+                if (isScrollingDown && top != lastTop) {
+                    val targetY = navBar.height.toFloat() + d(40)
+                    navBar.animate()
+                        .translationY(targetY)
+                        .alpha(0f)
+                        .setDuration(250)
+                        .start()
+                } else if (!isScrollingDown && top != lastTop) {
+                    navBar.animate()
+                        .translationY(0f)
+                        .alpha(1f)
+                        .setDuration(200)
+                        .start()
+                }
+
+                lastFirstVisibleItem = firstVisibleItem
+                lastTop = top
+            }
+        })
+
         val root = FrameLayout(this).apply {
-            setBackgroundColor(Ui.BG)
+            setBackgroundColor(Ui.bg(this@MainActivity))
             addView(mainContent, FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH))
             addView(navBar, navParams)
         }
         setContentView(root)
+        Ui.setupEdgeToEdge(this, root)
     }
 
+    @Suppress("DEPRECATION")
+    private fun openSettings() {
+        val intent = Intent(this, SettingsActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION
+        }
+        startActivity(intent)
+        overridePendingTransition(0, 0)
+    }
+
+    @Suppress("DEPRECATION")
     private fun openGallery() {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        val intent = Intent(this, GalleryActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION
         }
-        try {
-            startActivity(intent)
-        } catch (e: Exception) {
-            val fallback = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
-            try {
-                startActivity(fallback)
-            } catch (e2: Exception) {
-                Toast.makeText(this, "Galeri açılamadı", Toast.LENGTH_SHORT).show()
-            }
-        }
+        startActivity(intent)
+        overridePendingTransition(0, 0)
     }
 
     override fun onStart() {

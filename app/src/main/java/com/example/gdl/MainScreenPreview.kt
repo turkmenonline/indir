@@ -22,8 +22,8 @@ fun MainScreenPreview() {
     val bgColor = Color(0xFFF5F5FA)
     val cardBg = Color.White
     val line = Color(0xFFE3E3EC)
-    val primary = Color(0xFF4338CA)
-    val primaryBg = Color(0xFFE8E7FB)
+    val primary = Color(0xFF007AFF)
+    val primaryBg = Color(0xFFEBF3FF)
     val textColor = Color(0xFF1B1B1F)
     val muted = Color(0xFF6B6B7B)
     val okBg = Color(0xFFDFF5E6)
@@ -51,12 +51,12 @@ fun MainScreenPreview() {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "İNDİR",
-                        fontSize = 24.sp,
+                        fontSize = 20.sp,
                         fontFamily = SpaceGroteskFontFamily,
                         fontWeight = FontWeight.Bold,
                         color = textColor
@@ -188,62 +188,59 @@ fun MainScreenPreview() {
                 }
             }
 
-            // Floating Liquid Glass Bottom Navigation Bar
+            // Floating Liquid Glass Bottom Navigation Bar (Compact Pill)
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(horizontal = 20.dp, vertical = 20.dp)
-                    .fillMaxWidth()
-                    .shadow(12.dp, RoundedCornerShape(32.dp))
-                    .background(Color(0xE6FFFFFF), RoundedCornerShape(32.dp))
-                    .border(2.dp, Color(0xA0FFFFFF), RoundedCornerShape(32.dp))
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .padding(bottom = 20.dp)
+                    .wrapContentWidth()
+                    .shadow(10.dp, RoundedCornerShape(999.dp))
+                    .background(Color(0xE6FFFFFF), RoundedCornerShape(999.dp))
+                    .border(1.dp, Color(0xA0FFFFFF), RoundedCornerShape(999.dp))
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    modifier = Modifier.wrapContentWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Tab 0: İndir (Selected)
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .background(primaryBg, RoundedCornerShape(22.dp))
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                            .background(primaryBg, RoundedCornerShape(999.dp))
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("⬇️", fontSize = 14.sp)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("İndir", fontSize = 13.sp, fontFamily = SpaceGroteskFontFamily, fontWeight = FontWeight.Bold, color = primary)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("⬇️", fontSize = 15.sp)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("İndir", fontSize = 11.sp, fontFamily = SpaceGroteskFontFamily, fontWeight = FontWeight.Bold, color = primary)
                         }
                     }
 
                     // Tab 1: Galeri
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("🖼️", fontSize = 14.sp)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Galeri", fontSize = 13.sp, fontFamily = SpaceGroteskFontFamily, color = muted)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("🖼️", fontSize = 15.sp)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Galeri", fontSize = 11.sp, fontFamily = SpaceGroteskFontFamily, color = muted)
                         }
                     }
 
                     // Tab 2: Ayarlar
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("⚙️", fontSize = 14.sp)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Ayarlar", fontSize = 13.sp, fontFamily = SpaceGroteskFontFamily, color = muted)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("⚙️", fontSize = 15.sp)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Ayarlar", fontSize = 11.sp, fontFamily = SpaceGroteskFontFamily, color = muted)
                         }
                     }
                 }

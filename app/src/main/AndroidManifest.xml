@@ -34,6 +34,7 @@
         </activity>
 
         <activity android:name=".SettingsActivity" android:exported="false" />
+        <activity android:name=".GalleryActivity" android:exported="false" />
 
         <service
             android:name=".DownloadService"

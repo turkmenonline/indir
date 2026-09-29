@@ -16,8 +16,8 @@ class HistoryRow(c: Context) : LinearLayout(c) {
     private val badge = FrameLayout(c)
     private val sym = Ui.text(c, "", 18f, Ui.OK, true)
     private val spin = ProgressBar(c)
-    private val title = Ui.text(c, "", 15f, Ui.TEXT, true)
-    private val sub = Ui.text(c, "", 13f, Ui.MUTED)
+    private val title = Ui.text(c, "", 15f, Ui.textClr(c), true)
+    private val sub = Ui.text(c, "", 13f, Ui.mutedClr(c))
     private val chipHolder = FrameLayout(c)
     private var chip: TextView? = null
 
@@ -27,14 +27,14 @@ class HistoryRow(c: Context) : LinearLayout(c) {
         val p = Ui.dp(c, 14)
         setPadding(p, p, p, p)
         val r = Ui.dp(c, 16).toFloat()
-        background = Ui.ripple(Ui.shape(Ui.CARD, r, Ui.LINE, Ui.dp(c, 1)), r)
+        background = Ui.ripple(Ui.shape(Ui.cardBg(c), r, Ui.line(c), Ui.dp(c, 1)), r)
 
         val bs = Ui.dp(c, 40)
         sym.gravity = Gravity.CENTER
         badge.addView(sym, FrameLayout.LayoutParams(bs, bs))
         val ps = Ui.dp(c, 22)
         spin.isIndeterminate = true
-        spin.indeterminateTintList = ColorStateList.valueOf(Ui.PRIMARY)
+        spin.indeterminateTintList = ColorStateList.valueOf(Ui.primary(c))
         badge.addView(spin, FrameLayout.LayoutParams(ps, ps, Gravity.CENTER))
         addView(badge, Ui.lp(bs, bs))
 
@@ -56,19 +56,21 @@ class HistoryRow(c: Context) : LinearLayout(c) {
         val url = h.getString("url")
         val status = h.getString("status")
 
-        val uri = try { Uri.parse(url) } catch (e: Exception) { null }
+        val uri = try { Uri.parse(url) } catch (_: Exception) { null }
         val host = (uri?.host ?: url).removePrefix("www.")
         val path = (uri?.path ?: "").trimEnd('/')
         title.text = host
+        title.setTextColor(Ui.textClr(c))
         sub.text = if (path.isEmpty()) url else path
+        sub.setTextColor(Ui.mutedClr(c))
 
         val kind = when {
             status.startsWith("✓") -> 1
             status.startsWith("✗") -> 2
             else -> 0
         }
-        val fg = when (kind) { 1 -> Ui.OK; 2 -> Ui.ERR; else -> Ui.PRIMARY }
-        val bg = when (kind) { 1 -> Ui.OK_BG; 2 -> Ui.ERR_BG; else -> Ui.PRIMARY_BG }
+        val fg = when (kind) { 1 -> Ui.OK; 2 -> Ui.ERR; else -> Ui.primary(c) }
+        val bg = when (kind) { 1 -> Ui.OK_BG; 2 -> Ui.ERR_BG; else -> Ui.primaryBg(c) }
 
         badge.background = Ui.shape(bg, Ui.dp(c, 20).toFloat())
         sym.text = if (kind == 1) "✓" else "✕"

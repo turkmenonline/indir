@@ -116,8 +116,10 @@ class DownloadService : Service() {
             val sink = ProgressSink { p ->
                 nm.notify(1, progressNotif("İndiriliyor: $host", p))
             }
+            val updatesDir = File(filesDir, "python_updates")
+            val updatesPath = if (updatesDir.exists()) updatesDir.absolutePath else ""
             log = Python.getInstance().getModule("dl")
-                .callAttr("run", url, dir.absolutePath, cookiePath, Store.template(this), sink)
+                .callAttr("run", url, dir.absolutePath, cookiePath, Store.template(this), sink, updatesPath)
                 .toString()
             saved = dir.walkTopDown().filter { it.isFile }.count { save(it) }
         } catch (e: Exception) {

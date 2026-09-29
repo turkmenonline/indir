@@ -2,6 +2,7 @@ package com.example.gdl
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
@@ -17,32 +18,83 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.res.ResourcesCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 
-/** Kod ile çizilen ekranlar için ortak renk ve bileşenler. */
+/** Kod ile çizilen ekranlar için güvenli dinamik renkler ve bileşenler. */
 object Ui {
-    val BG = Color.parseColor("#F5F5FA")
-    val CARD = Color.WHITE
-    val LINE = Color.parseColor("#E3E3EC")
-    val FIELD_LINE = Color.parseColor("#D3D3E0")
-    val TEXT = Color.parseColor("#1B1B1F")
-    val MUTED = Color.parseColor("#6B6B7B")
-    val HINT = Color.parseColor("#9A9AAA")
-    val PRIMARY = Color.parseColor("#4338CA")
-    val PRIMARY_BG = Color.parseColor("#E8E7FB")
-    val OK = Color.parseColor("#15803D")
-    val OK_BG = Color.parseColor("#DFF5E6")
-    val ERR = Color.parseColor("#B3261E")
-    val ERR_BG = Color.parseColor("#FCE7E5")
-    private val ERR_LINE = Color.parseColor("#F0C6C2")
-    private const val RIPPLE = 0x224338CA
+    fun isDark(c: Context?): Boolean {
+        if (c == null) return false
+        return try {
+            val nightMode = c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+            nightMode == Configuration.UI_MODE_NIGHT_YES
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun setupEdgeToEdge(activity: AppCompatActivity, root: View) {
+        try {
+            val window = activity.window
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.statusBarColor = Color.TRANSPARENT
+            window.navigationBarColor = Color.TRANSPARENT
+
+            val isDarkTheme = isDark(activity)
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.isAppearanceLightStatusBars = !isDarkTheme
+            controller.isAppearanceLightNavigationBars = !isDarkTheme
+
+            ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+                val statusTop = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+                val navBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+                root.setPadding(root.paddingLeft, statusTop, root.paddingRight, navBottom)
+                insets
+            }
+        } catch (_: Throwable) {}
+    }
+
+    private fun safeColor(colorHex: String, fallback: Int): Int {
+        return try {
+            Color.parseColor(colorHex)
+        } catch (_: Throwable) {
+            fallback
+        }
+    }
+
+    fun bg(c: Context?): Int = if (isDark(c)) safeColor("#0F0F12", Color.BLACK) else safeColor("#F5F5FA", Color.WHITE)
+    fun cardBg(c: Context?): Int = if (isDark(c)) safeColor("#1C1C24", Color.DKGRAY) else Color.WHITE
+    fun line(c: Context?): Int = if (isDark(c)) safeColor("#282834", Color.GRAY) else safeColor("#E3E3EC", Color.LTGRAY)
+    fun fieldLine(c: Context?): Int = if (isDark(c)) safeColor("#383848", Color.GRAY) else safeColor("#D3D3E0", Color.LTGRAY)
+    fun textClr(c: Context?): Int = if (isDark(c)) Color.WHITE else safeColor("#1B1B1F", Color.BLACK)
+    fun mutedClr(c: Context?): Int = if (isDark(c)) safeColor("#9E9EB2", Color.GRAY) else safeColor("#6B6B7B", Color.GRAY)
+    fun hintClr(c: Context?): Int = if (isDark(c)) safeColor("#6E6E82", Color.GRAY) else safeColor("#9A9AAA", Color.GRAY)
+    fun primary(c: Context?): Int = if (isDark(c)) safeColor("#389BFF", Color.BLUE) else safeColor("#007AFF", Color.BLUE)
+    fun primaryBg(c: Context?): Int = if (isDark(c)) safeColor("#16263D", Color.DKGRAY) else safeColor("#EBF3FF", Color.LTGRAY)
+
+    val OK = safeColor("#15803D", Color.GREEN)
+    val OK_BG = safeColor("#DFF5E6", Color.LTGRAY)
+    val ERR = safeColor("#B3261E", Color.RED)
+    val ERR_BG = safeColor("#FCE7E5", Color.LTGRAY)
+    private val ERR_LINE = safeColor("#F0C6C2", Color.RED)
+    private const val RIPPLE = 0x22007AFF
 
     enum class Kind { FILLED, TONAL, OUTLINE, DANGER }
 
     const val MATCH = LinearLayout.LayoutParams.MATCH_PARENT
     const val WRAP = LinearLayout.LayoutParams.WRAP_CONTENT
 
-    fun dp(c: Context, v: Int): Int = (v * c.resources.displayMetrics.density).toInt()
+    fun dp(c: Context?, v: Int): Int {
+        if (c == null) return v * 2
+        return try {
+            (v * c.resources.displayMetrics.density).toInt()
+        } catch (_: Throwable) {
+            v * 2
+        }
+    }
 
     fun lp(
         w: Int, h: Int, weight: Float = 0f,
@@ -61,13 +113,22 @@ object Ui {
     fun ripple(base: Drawable, radius: Float): RippleDrawable =
         RippleDrawable(ColorStateList.valueOf(RIPPLE), base, shape(Color.WHITE, radius))
 
-    fun font(c: Context, bold: Boolean = false): Typeface {
+    fun font(c: Context?, bold: Boolean = false): Typeface {
         val style = if (bold) Typeface.BOLD else Typeface.NORMAL
+        if (c == null) return Typeface.create(Typeface.DEFAULT, style)
         return try {
             val tf = ResourcesCompat.getFont(c, R.font.space_grotesk)
-            if (tf != null) Typeface.create(tf, style) else Typeface.create("sans-serif-medium", style)
-        } catch (_: Exception) {
-            Typeface.create("sans-serif-medium", style)
+            if (tf != null) {
+                Typeface.create(tf, style)
+            } else {
+                Typeface.create(Typeface.DEFAULT, style)
+            }
+        } catch (_: Throwable) {
+            try {
+                Typeface.create(Typeface.DEFAULT, style)
+            } catch (_: Throwable) {
+                Typeface.DEFAULT
+            }
         }
     }
 
@@ -79,28 +140,28 @@ object Ui {
             typeface = font(c, bold)
         }
 
-    fun childText(c: Context, s: String, sp: Float = 14f, color: Int = TEXT, bold: Boolean = false): TextView =
-        text(c, s, sp, color, bold)
+    fun childText(c: Context, s: String, sp: Float = 14f, color: Int? = null, bold: Boolean = false): TextView =
+        text(c, s, sp, color ?: textClr(c), bold)
 
     fun button(c: Context, label: String, kind: Kind, onClick: () -> Unit): Button {
-        val (bg, fg, line) = when (kind) {
-            Kind.FILLED -> Triple(PRIMARY, Color.WHITE, PRIMARY)
-            Kind.TONAL -> Triple(PRIMARY_BG, PRIMARY, PRIMARY_BG)
-            Kind.OUTLINE -> Triple(CARD, TEXT, FIELD_LINE)
-            Kind.DANGER -> Triple(CARD, ERR, ERR_LINE)
+        val (bgClr, fgClr, lineClr) = when (kind) {
+            Kind.FILLED -> Triple(primary(c), Color.WHITE, primary(c))
+            Kind.TONAL -> Triple(primaryBg(c), primary(c), primaryBg(c))
+            Kind.OUTLINE -> Triple(cardBg(c), textClr(c), fieldLine(c))
+            Kind.DANGER -> Triple(cardBg(c), ERR, ERR_LINE)
         }
         val r = dp(c, 14).toFloat()
         return Button(c).apply {
             text = label
             isAllCaps = false
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setTextColor(fg)
+            setTextColor(fgClr)
             typeface = font(c, bold = true)
             stateListAnimator = null
             minHeight = dp(c, 48)
             minimumHeight = dp(c, 48)
             setPadding(dp(c, 16), 0, dp(c, 16), 0)
-            background = ripple(shape(bg, r, line, dp(c, 1)), r)
+            background = ripple(shape(bgClr, r, lineClr, dp(c, 1)), r)
             setOnClickListener { onClick() }
         }
     }
@@ -109,22 +170,22 @@ object Ui {
         orientation = LinearLayout.VERTICAL
         val p = dp(c, 16)
         setPadding(p, p, p, p)
-        background = shape(CARD, dp(c, 18).toFloat(), LINE, dp(c, 1))
+        background = shape(cardBg(c), dp(c, 18).toFloat(), line(c), dp(c, 1))
     }
 
     fun field(c: Context, hintText: String): EditText = EditText(c).apply {
         hint = hintText
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        setTextColor(TEXT)
-        setHintTextColor(HINT)
+        setTextColor(textClr(c))
+        setHintTextColor(hintClr(c))
         typeface = font(c, bold = false)
         val r = dp(c, 12).toFloat()
         background = StateListDrawable().apply {
             addState(
                 intArrayOf(android.R.attr.state_focused),
-                shape(BG, r, PRIMARY, dp(c, 2))
+                shape(bg(c), r, primary(c), dp(c, 2))
             )
-            addState(intArrayOf(), shape(BG, r, FIELD_LINE, dp(c, 1)))
+            addState(intArrayOf(), shape(bg(c), r, fieldLine(c), dp(c, 1)))
         }
         setPadding(dp(c, 14), dp(c, 12), dp(c, 14), dp(c, 12))
     }
@@ -139,9 +200,9 @@ object Ui {
     fun iconButton(c: Context, res: Int, desc: String, onClick: () -> Unit): ImageButton =
         ImageButton(c).apply {
             setImageResource(res)
-            imageTintList = ColorStateList.valueOf(TEXT)
+            imageTintList = ColorStateList.valueOf(textClr(c))
             contentDescription = desc
-            scaleType = android.widget.ImageView.ScaleType.CENTER
+            scaleType = ImageView.ScaleType.CENTER
             background = ripple(shape(Color.TRANSPARENT, dp(c, 24).toFloat()), dp(c, 24).toFloat())
             setOnClickListener { onClick() }
         }
@@ -152,12 +213,25 @@ object Ui {
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(c, 64)
             val size = dp(c, 48)
-            if (leading != null) addView(leading, lp(size, size, r = dp(c, 4)))
-            addView(
-                text(c, title, 24f, TEXT, true),
-                lp(0, WRAP, 1f, l = if (leading == null) dp(c, 4) else 0)
-            )
-            if (trailing != null) addView(trailing, lp(size, size))
+
+            if (leading != null) {
+                addView(leading, lp(size, size))
+            } else if (trailing != null) {
+                val dummyLeft = View(c).apply { visibility = View.INVISIBLE }
+                addView(dummyLeft, lp(size, size))
+            }
+
+            val titleView = text(c, title, 20f, textClr(c), true).apply {
+                gravity = Gravity.CENTER
+            }
+            addView(titleView, lp(0, WRAP, 1f))
+
+            if (trailing != null) {
+                addView(trailing, lp(size, size))
+            } else if (leading != null) {
+                val dummyRight = View(c).apply { visibility = View.INVISIBLE }
+                addView(dummyRight, lp(size, size))
+            }
         }
 
     data class NavItem(val title: String, val iconRes: Int)
@@ -168,61 +242,62 @@ object Ui {
         selectedIndex: Int,
         onSelect: (Int) -> Unit
     ): LinearLayout {
-        val glassBgColor = Color.parseColor("#E6FFFFFF")
-        val borderWhite = Color.parseColor("#A0FFFFFF")
-        val radius = dp(c, 32).toFloat()
+        val glassBgColor = if (isDark(c)) safeColor("#CC1A1A24", Color.BLACK) else safeColor("#E6FFFFFF", Color.WHITE)
+        val borderWhite = if (isDark(c)) safeColor("#383848", Color.DKGRAY) else safeColor("#A0FFFFFF", Color.LTGRAY)
+        val pillRadius = 999f
 
         return LinearLayout(c).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            val pV = dp(c, 6)
-            val pH = dp(c, 8)
+            gravity = Gravity.CENTER
+            val pV = dp(c, 4)
+            val pH = dp(c, 6)
             setPadding(pH, pV, pH, pV)
-            background = shape(glassBgColor, radius, borderWhite, dp(c, 2))
-            elevation = dp(c, 12).toFloat()
+            background = shape(glassBgColor, pillRadius, borderWhite, dp(c, 1))
+            elevation = dp(c, 10).toFloat()
 
             items.forEachIndexed { index, item ->
                 val isSelected = (index == selectedIndex)
-                val activeColor = PRIMARY
-                val inactiveColor = MUTED
+                val activeColor = primary(c)
+                val inactiveColor = mutedClr(c)
                 val fgColor = if (isSelected) activeColor else inactiveColor
 
-                val icon = ImageButton(c).apply {
+                val icon = ImageView(c).apply {
                     setImageResource(item.iconRes)
                     imageTintList = ColorStateList.valueOf(fgColor)
-                    background = null
-                    isClickable = false
-                    isFocusable = false
                     scaleType = ImageView.ScaleType.FIT_CENTER
                     val sz = dp(c, 20)
-                    layoutParams = LinearLayout.LayoutParams(sz, sz)
+                    layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                        gravity = Gravity.CENTER_HORIZONTAL
+                    }
                 }
 
-                val label = text(c, item.title, 13f, fgColor, isSelected).apply {
+                val label = text(c, item.title, 10.5f, fgColor, isSelected).apply {
                     gravity = Gravity.CENTER
+                    maxLines = 1
+                    ellipsize = null
                 }
 
-                val rTab = dp(c, 22).toFloat()
                 val tabCell = LinearLayout(c).apply {
-                    orientation = LinearLayout.HORIZONTAL
+                    orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
-                    val pTabV = dp(c, 10)
+                    minimumWidth = dp(c, 68)
+                    val pTabV = dp(c, 6)
                     val pTabH = dp(c, 14)
                     setPadding(pTabH, pTabV, pTabH, pTabV)
 
                     background = if (isSelected) {
-                        ripple(shape(PRIMARY_BG, rTab), rTab)
+                        ripple(shape(primaryBg(c), pillRadius), pillRadius)
                     } else {
-                        ripple(shape(Color.TRANSPARENT, rTab), rTab)
+                        ripple(shape(Color.TRANSPARENT, pillRadius), pillRadius)
                     }
 
                     addView(icon)
-                    addView(label, lp(WRAP, WRAP, l = dp(c, 6)))
+                    addView(label, lp(WRAP, WRAP, t = dp(c, 2)))
 
                     setOnClickListener { onSelect(index) }
                 }
 
-                addView(tabCell, lp(0, WRAP, 1f, l = dp(c, 3), r = dp(c, 3)))
+                addView(tabCell, lp(0, WRAP, 1f, l = dp(c, 2), r = dp(c, 2)))
             }
         }
     }

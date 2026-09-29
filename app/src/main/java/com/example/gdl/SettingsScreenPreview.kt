@@ -23,8 +23,8 @@ fun SettingsScreenPreview() {
     val bgColor = Color(0xFFF5F5FA)
     val cardBg = Color.White
     val line = Color(0xFFE3E3EC)
-    val primary = Color(0xFF4338CA)
-    val primaryBg = Color(0xFFE8E7FB)
+    val primary = Color(0xFF007AFF)
+    val primaryBg = Color(0xFFEBF3FF)
     val textColor = Color(0xFF1B1B1F)
     val muted = Color(0xFF6B6B7B)
     val okBg = Color(0xFFDFF5E6)
