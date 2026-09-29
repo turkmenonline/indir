@@ -1,0 +1,92 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer Orbital Arc (Left to Top) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M36,54 A19,19 0 1,1 50,26" />
+
+    <!-- Outer Orbital Arc (Top-Right Line) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M52,26 C58,26 64,28 67,31" />
+
+    <!-- Node 1 Circle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M52,26 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+
+    <!-- Node 2 Circle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M67,31 m-3.5,0 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0" />
+
+    <!-- Node 3 Circle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M72,40 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+
+    <!-- Node Connector Line -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M67,31 L72,40" />
+
+    <!-- Outer Orbital Arc (Right Bottom) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M72,46 A19,19 0 0,1 71,54" />
+
+    <!-- Photo Card (Outer Frame) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M43,28 h22 a4,4 0 0,1 4,4 v16 a4,4 0 0,1 -4,4 h-22 a4,4 0 0,1 -4,-4 v-16 a4,4 0 0,1 4,-4 z" />
+
+    <!-- Photo Card Inner Window -->
+    <path
+        android:fillColor="#0084FF"
+        android:pathData="M45,30 h18 a2,2 0 0,1 2,2 v12 a2,2 0 0,1 -2,2 h-18 a2,2 0 0,1 -2,-2 v-12 a2,2 0 0,1 2,-2 z" />
+
+    <!-- Mountains inside Photo Card -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M45,44 L50,37 L55,44 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M52,44 L58,35 L64,44 Z" />
+
+    <!-- Sun inside Photo Card -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,34 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+
+    <!-- Download Arrow Stem -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50,52 h8 v7 h-8 z" />
+
+    <!-- Download Arrow Head -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,58 L68,58 L54,72 Z" />
+
+    <!-- Download Tray (U-Bracket) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M35,68 h5 v10 a1,1 0 0,0 1,1 h26 a1,1 0 0,0 1,-1 v-10 h5 v11 a4,4 0 0,1 -4,4 h-30 a4,4 0 0,1 -4,-4 z" />
+
+</vector>
