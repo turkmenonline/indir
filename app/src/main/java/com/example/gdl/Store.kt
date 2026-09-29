@@ -49,12 +49,16 @@ object Store {
     @Synchronized
     fun upsert(c: Context, id: Long, url: String, status: String, log: String) {
         val list = history(c).toMutableList()
+        val existing = list.firstOrNull { it.optLong("id", 0L) == id }
+        val timestamp = existing?.optLong("timestamp", 0L)?.takeIf { it > 0 } ?: if (id > 0) id else System.currentTimeMillis()
+
         val o = JSONObject()
         o.put("id", id)
         o.put("url", url)
         o.put("status", status)
         o.put("log", log)
-        val idx = list.indexOfFirst { it.getLong("id") == id }
+        o.put("timestamp", timestamp)
+        val idx = list.indexOfFirst { it.optLong("id", 0L) == id }
         if (idx >= 0) list[idx] = o else list.add(0, o)
         val arr = JSONArray()
         list.take(50).forEach { arr.put(it) }

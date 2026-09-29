@@ -348,6 +348,15 @@ class SettingsActivity : AppCompatActivity() {
         overridePendingTransition(0, 0)
     }
 
+    @Suppress("DEPRECATION")
+    private fun openHistory() {
+        val intent = Intent(this, HistoryActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION
+        }
+        startActivity(intent)
+        overridePendingTransition(0, 0)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
             Store.applyTheme(this)
@@ -600,14 +609,16 @@ class SettingsActivity : AppCompatActivity() {
         val navItems = listOf(
             Ui.NavItem("İndir", R.drawable.ic_tab_download),
             Ui.NavItem("Galeri", R.drawable.ic_tab_gallery),
+            Ui.NavItem("Geçmiş", R.drawable.ic_history),
             Ui.NavItem("Ayarlar", R.drawable.ic_tab_settings)
         )
 
-        val navBar = Ui.floatingNavBar(this, navItems, selectedIndex = 2) { index ->
+        val navBar = Ui.floatingNavBar(this, navItems, selectedIndex = 3) { index ->
             when (index) {
                 0 -> openMain()
                 1 -> openGallery()
-                2 -> { /* Zaten Ayarlar ekranındayız */ }
+                2 -> openHistory()
+                3 -> { /* Zaten Ayarlar ekranındayız */ }
             }
         }
 

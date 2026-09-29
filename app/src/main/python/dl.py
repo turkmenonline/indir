@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import re
 import shutil
 import ssl
 import sys
@@ -265,9 +266,49 @@ def _gallery(url, dest, cookies, template):
     args = ["gallery-dl", "-D", dest]
     if cookies:
         args += ["--cookies", cookies]
-    if template:
-        args += ["-f", template]
+    t = template if template else "{category}_{id}_{num}.{extension}"
+    args += ["-f", t]
     args.append(url)
+
+    def _clean_metadata(d):
+        if isinstance(d, dict):
+            for k in list(d.keys()):
+                v = d[k]
+                if k in ("author", "user") and isinstance(v, dict):
+                    d[k] = v.get("username") or v.get("name") or v.get("display_name") or v.get("id") or str(v)
+                elif isinstance(v, dict):
+                    _clean_metadata(v)
+                elif isinstance(v, list):
+                    for item in v:
+                        if isinstance(item, dict):
+                            _clean_metadata(item)
+        return d
+
+    try:
+        if hasattr(gallery_dl, "formatter"):
+            orig_format_map = getattr(gallery_dl.formatter, "format_map", None)
+            if orig_format_map:
+                def safe_format_map(fmt, mapping, *args, **kwargs):
+                    if isinstance(mapping, dict):
+                        _clean_metadata(mapping)
+                    return orig_format_map(fmt, mapping, *args, **kwargs)
+                gallery_dl.formatter.format_map = safe_format_map
+    except Exception:
+        pass
+
+    import builtins
+    orig_open = builtins.open
+    def safe_open(file, mode='r', *args, **kwargs):
+        if isinstance(file, (str, os.PathLike)) and ('w' in mode or 'a' in mode or '+' in mode):
+            file_str = str(file)
+            dirname = os.path.dirname(file_str)
+            basename = os.path.basename(file_str)
+            sanitized = re.sub(r'[^\w\-\. ]', '_', basename)
+            file = os.path.join(dirname, sanitized)
+        return orig_open(file, mode, *args, **kwargs)
+
+    builtins.open = safe_open
+
     buf = io.StringIO()
     old = sys.argv
     sys.argv = args
@@ -282,6 +323,7 @@ def _gallery(url, dest, cookies, template):
         code = 1
     finally:
         sys.argv = old
+        builtins.open = orig_open
     return buf.getvalue() + "(çıkış kodu: %s)" % code
 
 
@@ -319,7 +361,7 @@ def _ytdlp(url, dest, cookies, sink):
 
     log = _Log()
     opts = {
-        "outtmpl": os.path.join(dest, "%(title).80s [%(id)s].%(ext)s"),
+        "outtmpl": os.path.join(dest, "%(extractor)s_%(id)s.%(ext)s"),
         "format": "best[ext=mp4]/best",
         "noplaylist": True,
         "quiet": True,
