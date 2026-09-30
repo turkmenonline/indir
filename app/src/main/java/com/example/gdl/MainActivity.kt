@@ -14,6 +14,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -58,33 +59,24 @@ class MainActivity : AppCompatActivity() {
                 } else false
             }
         }
-        val qualityButtons = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
+        val qualityButtonsHolder = FrameLayout(this)
         fun updateQualityButtons() {
-            qualityButtons.removeAllViews()
+            qualityButtonsHolder.removeAllViews()
             val qualities = listOf(
-                Triple("En iyi", Store.QUALITY_BEST, 0),
-                Triple("1080p", Store.QUALITY_1080P, 1),
-                Triple("720p", Store.QUALITY_720P, 2),
-                Triple("Ses", Store.QUALITY_AUDIO_ONLY, 3)
+                Pair("En iyi", Store.QUALITY_BEST),
+                Pair("720p", Store.QUALITY_720P),
+                Pair("Ses", Store.QUALITY_AUDIO_ONLY)
             )
-            qualities.forEach { (title, qVal, index) ->
-                val isSel = (selectedQuality == qVal)
-                val btnKind = if (isSel) Ui.Kind.FILLED else Ui.Kind.TONAL
-                val btn = Ui.button(this@MainActivity, title, btnKind) {
-                    if (selectedQuality != qVal) {
-                        selectedQuality = qVal
-                        updateQualityButtons()
-                    }
-                }.apply {
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
-                    setPadding(d(8), 0, d(8), 0)
-                    maxLines = 1
-                    ellipsize = null
+            val currentIndex = qualities.indexOfFirst { it.second == selectedQuality }.coerceAtLeast(0)
+            val titles = qualities.map { it.first }
+            val seg = Ui.segmentedControl(this@MainActivity, titles, currentIndex) { index ->
+                val qVal = qualities[index].second
+                if (selectedQuality != qVal) {
+                    selectedQuality = qVal
+                    updateQualityButtons()
                 }
-                qualityButtons.addView(btn, Ui.lp(0, Ui.WRAP, 1f, l = if (index > 0) d(4) else 0))
             }
+            qualityButtonsHolder.addView(seg, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
         }
         updateQualityButtons()
 
@@ -97,22 +89,27 @@ class MainActivity : AppCompatActivity() {
         }
         val inputCard = Ui.card(this).apply {
             addView(input, Ui.lp(Ui.MATCH, Ui.WRAP))
-            addView(qualityButtons, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12), b = d(12)))
+            addView(qualityButtonsHolder, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12), b = d(12)))
             addView(buttons, Ui.lp(Ui.MATCH, Ui.WRAP))
         }
 
         val mainContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.bg(this@MainActivity))
-            setPadding(d(16), 0, d(16), 0)
+            setPadding(d(16), 0, d(16), d(100))
+            clipToPadding = false
             addView(header, Ui.lp(Ui.MATCH, Ui.WRAP))
             addView(inputCard, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(16)))
         }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = false
+            clipToPadding = false
+            addView(mainContent)
+        }
 
-        // Floating Liquid Glass Bottom Navigation Bar (4 items)
+        // Floating Liquid Glass Bottom Navigation Bar (3 items)
         val navItems = listOf(
             Ui.NavItem("İndir", R.drawable.ic_tab_download),
-            Ui.NavItem("Galeri", R.drawable.ic_tab_gallery),
             Ui.NavItem("Geçmiş", R.drawable.ic_history),
             Ui.NavItem("Ayarlar", R.drawable.ic_tab_settings)
         )
@@ -120,9 +117,8 @@ class MainActivity : AppCompatActivity() {
         val navBar = Ui.floatingNavBar(this, navItems, selectedIndex = 0) { index ->
             when (index) {
                 0 -> { /* Zaten İndir ekranındayız */ }
-                1 -> openGallery()
-                2 -> openHistory()
-                3 -> openSettings()
+                1 -> openHistory()
+                2 -> openSettings()
             }
         }
 
@@ -136,7 +132,7 @@ class MainActivity : AppCompatActivity() {
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Ui.bg(this@MainActivity))
-            addView(mainContent, FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH))
+            addView(scroll, FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH))
             addView(navBar, navParams)
         }
         setContentView(root)
@@ -158,14 +154,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    @Suppress("DEPRECATION")
-    private fun openGallery() {
-        val intent = Intent(this, GalleryActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION
-        }
-        startActivity(intent)
-        overridePendingTransition(0, 0)
-    }
 
     @Suppress("DEPRECATION")
     private fun openHistory() {

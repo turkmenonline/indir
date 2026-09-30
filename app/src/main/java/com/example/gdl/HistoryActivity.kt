@@ -1,37 +1,29 @@
 package com.example.gdl
 
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Intent
 import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
+import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewGroup
-import android.widget.AbsListView
-import android.widget.BaseAdapter
+import android.view.Window
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ListView
+import android.widget.ScrollView
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONObject
 
 class HistoryActivity : AppCompatActivity() {
-    private lateinit var adapter: HistoryAdapter
+    private lateinit var historyListLayout: LinearLayout
     private var hist: List<JSONObject> = emptyList()
-
-    private inner class HistoryAdapter : BaseAdapter() {
-        override fun getCount() = hist.size
-        override fun getItem(position: Int): Any = hist[position]
-        override fun getItemId(position: Int): Long = hist[position].optLong("id")
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-            val row = (convertView as? HistoryRow) ?: HistoryRow(this@HistoryActivity)
-            row.bind(hist[position])
-            return row
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
@@ -44,53 +36,37 @@ class HistoryActivity : AppCompatActivity() {
         // Üst başlık
         val header = Ui.header(this, "Geçmiş", null, null)
 
-        adapter = HistoryAdapter()
-        val list = ListView(this).apply {
-            adapter = this@HistoryActivity.adapter
-            divider = ColorDrawable(Color.TRANSPARENT)
-            dividerHeight = d(10)
-            selector = ColorDrawable(Color.TRANSPARENT)
+        historyListLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, d(4), 0, d(100))
+        }
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = false
             clipToPadding = false
-            setPadding(0, d(4), 0, d(84))
-            isVerticalScrollBarEnabled = false
-            setOnItemClickListener { _, _, pos, _ -> showItem(hist[pos]) }
+            addView(historyListLayout, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
         }
-        val empty = Ui.text(
-            this,
-            "Henüz indirme yok\nYapılan indirmeler burada listelenir.",
-            14f, Ui.mutedClr(this)
-        ).apply {
-            gravity = Gravity.CENTER
-            setPadding(d(24), 0, d(24), d(84))
-        }
-        val listHolder = FrameLayout(this).apply {
-            addView(list, FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH))
-            addView(empty, FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH))
-        }
-        list.emptyView = empty
 
         val mainContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.bg(this@HistoryActivity))
             setPadding(d(16), 0, d(16), 0)
             addView(header, Ui.lp(Ui.MATCH, Ui.WRAP))
-            addView(listHolder, Ui.lp(Ui.MATCH, 0, 1f))
+            addView(scroll, Ui.lp(Ui.MATCH, 0, 1f))
         }
 
-        // Floating Liquid Glass Bottom Navigation Bar (4 items: İndir, Galeri, Geçmiş, Ayarlar)
+        // Floating Liquid Glass Bottom Navigation Bar (3 items)
         val navItems = listOf(
             Ui.NavItem("İndir", R.drawable.ic_tab_download),
-            Ui.NavItem("Galeri", R.drawable.ic_tab_gallery),
             Ui.NavItem("Geçmiş", R.drawable.ic_history),
             Ui.NavItem("Ayarlar", R.drawable.ic_tab_settings)
         )
 
-        val navBar = Ui.floatingNavBar(this, navItems, selectedIndex = 2) { index ->
+        val navBar = Ui.floatingNavBar(this, navItems, selectedIndex = 1) { index ->
             when (index) {
                 0 -> openMain()
-                1 -> openGallery()
-                2 -> { /* Zaten Geçmiş ekranındayız */ }
-                3 -> openSettings()
+                1 -> { /* Zaten Geçmiş ekranındayız */ }
+                2 -> openSettings()
             }
         }
 
@@ -111,47 +87,25 @@ class HistoryActivity : AppCompatActivity() {
                 .start()
         }
 
-        var lastFirstVisibleItem = 0
-        var lastTop = 0
-        list.setOnScrollListener(object : AbsListView.OnScrollListener {
-            override fun onScrollStateChanged(view: AbsListView?, scrollState: Int) {
-                if (scrollState == AbsListView.OnScrollListener.SCROLL_STATE_IDLE) {
-                    scrollHandler.removeCallbacks(showBarRunnable)
-                    scrollHandler.postDelayed(showBarRunnable, 200)
-                }
+        scroll.setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+            scrollHandler.removeCallbacks(showBarRunnable)
+            scrollHandler.postDelayed(showBarRunnable, 400)
+
+            if (scrollY > oldScrollY + 8) {
+                val targetY = navBar.height.toFloat() + d(40)
+                navBar.animate()
+                    .translationY(targetY)
+                    .alpha(0f)
+                    .setDuration(250)
+                    .start()
+            } else if (scrollY < oldScrollY - 8) {
+                navBar.animate()
+                    .translationY(0f)
+                    .alpha(1f)
+                    .setDuration(200)
+                    .start()
             }
-
-            override fun onScroll(view: AbsListView?, firstVisibleItem: Int, visibleItemCount: Int, totalItemCount: Int) {
-                scrollHandler.removeCallbacks(showBarRunnable)
-                scrollHandler.postDelayed(showBarRunnable, 400)
-
-                val firstChild = view?.getChildAt(0) ?: return
-                val top = firstChild.top
-                val isScrollingDown = if (firstVisibleItem == lastFirstVisibleItem) {
-                    top < lastTop
-                } else {
-                    firstVisibleItem > lastFirstVisibleItem
-                }
-
-                if (isScrollingDown && top != lastTop) {
-                    val targetY = navBar.height.toFloat() + d(40)
-                    navBar.animate()
-                        .translationY(targetY)
-                        .alpha(0f)
-                        .setDuration(250)
-                        .start()
-                } else if (!isScrollingDown && top != lastTop) {
-                    navBar.animate()
-                        .translationY(0f)
-                        .alpha(1f)
-                        .setDuration(200)
-                        .start()
-                }
-
-                lastFirstVisibleItem = firstVisibleItem
-                lastTop = top
-            }
-        })
+        }
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Ui.bg(this@HistoryActivity))
@@ -177,14 +131,6 @@ class HistoryActivity : AppCompatActivity() {
         overridePendingTransition(0, 0)
     }
 
-    @Suppress("DEPRECATION")
-    private fun openGallery() {
-        val intent = Intent(this, GalleryActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION
-        }
-        startActivity(intent)
-        overridePendingTransition(0, 0)
-    }
 
     @Suppress("DEPRECATION")
     private fun openSettings() {
@@ -207,8 +153,36 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun refresh() {
+        fun d(v: Int) = Ui.dp(this, v)
         hist = Store.history(this)
-        adapter.notifyDataSetChanged()
+        historyListLayout.removeAllViews()
+
+        if (hist.isEmpty()) {
+            val empty = Ui.text(
+                this,
+                "Henüz indirme yok\nYapılan indirmeler burada listelenir.",
+                14f, Ui.mutedClr(this)
+            ).apply {
+                gravity = Gravity.CENTER
+                setPadding(d(24), d(48), d(24), d(48))
+            }
+            historyListLayout.addView(empty)
+        } else {
+            hist.forEach { h ->
+                val row = HistoryRow(this).apply {
+                    bind(h)
+                    setOnClickListener { showItem(h) }
+                }
+                historyListLayout.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    setMargins(0, 0, 0, d(10))
+                })
+            }
+        }
+
+        val bottomSpacer = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d(110))
+        }
+        historyListLayout.addView(bottomSpacer)
     }
 
     private fun start(text: String) {
@@ -221,11 +195,101 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun showItem(h: JSONObject) {
         val url = h.getString("url")
-        AlertDialog.Builder(this)
-            .setTitle(h.getString("status"))
-            .setMessage(url + "\n\n" + h.optString("log"))
-            .setPositiveButton("Tekrar dene") { _, _ -> start(url) }
-            .setNegativeButton("Kapat", null)
-            .show()
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        val context = this
+        val cardBgColor = if (Ui.isDark(context)) Color.parseColor("#1C1C1E") else Color.parseColor("#F8F8FA")
+        val borderClr = if (Ui.isDark(context)) Color.parseColor("#2C2C2E") else Color.parseColor("#E5E5EA")
+
+        val rootLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(Ui.dp(context, 20), Ui.dp(context, 20), Ui.dp(context, 20), Ui.dp(context, 20))
+            background = Ui.shape(cardBgColor, Ui.dp(context, 24).toFloat(), borderClr, Ui.dp(context, 1))
+            elevation = Ui.dp(context, 16).toFloat()
+        }
+
+        // Başlık ve Durum Rozeti
+        val topRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val titleView = Ui.text(context, "İndirme Detayı", 18f, Ui.textClr(context), true)
+        topRow.addView(titleView, Ui.lp(0, Ui.WRAP, 1f))
+
+        val status = h.optString("status", "")
+        val isSuccess = status.contains("başarılı") || status.contains("kaydedildi") || status.startsWith("✓")
+        val badge = if (isSuccess) {
+            Ui.pill(context, "✓ Başarılı", Color.WHITE, Color.parseColor("#34C759"))
+        } else {
+            Ui.pill(context, "✗ İndirilemedi", Color.WHITE, Color.parseColor("#FF3B30"))
+        }
+        topRow.addView(badge, Ui.lp(Ui.WRAP, Ui.WRAP))
+
+        rootLayout.addView(topRow, Ui.lp(Ui.MATCH, Ui.WRAP, b = Ui.dp(context, 16)))
+
+        // Hata Kodları ve URL Alanı (İçi hafif gömülü: Açık modda #EBEBF0, Koyu modda #141416, kaydırılabilir ScrollView, monospace/SpaceGrotesk font)
+        val codeBoxBg = if (Ui.isDark(context)) Color.parseColor("#141416") else Color.parseColor("#EBEBF0")
+        val codeText = url + "\n\n" + h.optString("log", "")
+        val codeTv = Ui.text(context, codeText, 12.5f, Ui.textClr(context), false).apply {
+            typeface = Typeface.MONOSPACE
+            setPadding(Ui.dp(context, 12), Ui.dp(context, 12), Ui.dp(context, 12), Ui.dp(context, 12))
+        }
+        val codeScroll = ScrollView(context).apply {
+            background = Ui.shape(codeBoxBg, Ui.dp(context, 12).toFloat())
+            addView(codeTv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+        }
+        val codeScrollParams = Ui.lp(Ui.MATCH, Ui.dp(context, 260), b = Ui.dp(context, 16))
+        rootLayout.addView(codeScroll, codeScrollParams)
+
+        // Alt Butonlar (Yan yana iki adet tam oval radius 999f buton)
+        val buttonRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        val cancelBtn = Button(context).apply {
+            text = "Kapat"
+            isAllCaps = false
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextColor(Ui.textClr(context))
+            typeface = Ui.font(context, bold = true)
+            stateListAnimator = null
+            minHeight = Ui.dp(context, 48)
+            minimumHeight = Ui.dp(context, 48)
+            val tonalBg = if (Ui.isDark(context)) Color.parseColor("#3A3A3C") else Color.parseColor("#E5E5EA")
+            background = Ui.ripple(Ui.shape(tonalBg, 999f), 999f)
+            setOnClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                dialog.dismiss()
+            }
+        }
+
+        val retryBtn = Button(context).apply {
+            text = "Tekrar Dene"
+            isAllCaps = false
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextColor(Color.WHITE)
+            typeface = Ui.font(context, bold = true)
+            stateListAnimator = null
+            minHeight = Ui.dp(context, 48)
+            minimumHeight = Ui.dp(context, 48)
+            val blueBg = Ui.primary(context)
+            background = Ui.ripple(Ui.shape(blueBg, 999f), 999f)
+            setOnClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                start(url)
+                dialog.dismiss()
+            }
+        }
+
+        buttonRow.addView(cancelBtn, Ui.lp(0, Ui.WRAP, 1f, r = Ui.dp(context, 8)))
+        buttonRow.addView(retryBtn, Ui.lp(0, Ui.WRAP, 1f, l = Ui.dp(context, 8)))
+
+        rootLayout.addView(buttonRow, Ui.lp(Ui.MATCH, Ui.WRAP))
+
+        dialog.setContentView(rootLayout)
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.9).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.show()
     }
 }

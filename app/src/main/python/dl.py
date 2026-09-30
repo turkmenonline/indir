@@ -318,7 +318,7 @@ class _Log:
         self.lines.append("hata: %s" % msg)
 
 
-def _ytdlp(url, dest, cookies, sink, quality="best", ffmpeg_path=""):
+def _ytdlp(url, dest, cookies, sink, quality="best"):
     import yt_dlp
     last = [-1]
 
@@ -334,16 +334,14 @@ def _ytdlp(url, dest, cookies, sink, quality="best", ffmpeg_path=""):
             sink.update(pct)
 
     log = _Log()
-    if quality == "1080p":
-        fmt = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best'
-    elif quality == "720p":
-        fmt = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best'
+    if quality == "720p":
+        fmt = 'best[height<=720][ext=mp4]/best[height<=720]/best'
     elif quality == "audio_only":
-        fmt = 'bestaudio/best'
+        fmt = 'bestaudio[ext=m4a]/bestaudio/best'
     else:
-        fmt = 'bestvideo+bestaudio/best'
+        fmt = 'best[ext=mp4]/best'
 
-    opts = {
+    ydl_opts = {
         "outtmpl": os.path.join(dest, "%(title).80s [%(id)s].%(ext)s"),
         "format": fmt,
         "noplaylist": True,
@@ -352,16 +350,14 @@ def _ytdlp(url, dest, cookies, sink, quality="best", ffmpeg_path=""):
         "logger": log,
         "progress_hooks": [hook],
     }
-    if ffmpeg_path and os.path.exists(ffmpeg_path):
-        opts['ffmpeg_location'] = ffmpeg_path
     if cookies:
-        opts["cookiefile"] = cookies
-    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl_opts["cookiefile"] = cookies
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
     return "\n".join(log.lines) or "tamam"
 
 
-def run(url, dest, cookies, template, sink, updates_dir=None, quality="best", ffmpeg_path=""):
+def run(url, dest, cookies, template, sink, updates_dir=None, quality="best"):
     if updates_dir:
         setup_updates_path(updates_dir)
 
@@ -375,7 +371,7 @@ def run(url, dest, cookies, template, sink, updates_dir=None, quality="best", ff
             if tool == "gallery":
                 out = _gallery(url, dest, cookies, template)
             else:
-                out = _ytdlp(url, dest, cookies, sink, quality, ffmpeg_path)
+                out = _ytdlp(url, dest, cookies, sink, quality)
         except Exception as e:
             out = "%s: %s" % (type(e).__name__, e)
         parts.append("[%s]\n%s" % (tool, out.strip()))

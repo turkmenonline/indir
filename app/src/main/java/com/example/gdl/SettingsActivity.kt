@@ -340,14 +340,6 @@ class SettingsActivity : AppCompatActivity() {
         overridePendingTransition(0, 0)
     }
 
-    @Suppress("DEPRECATION")
-    private fun openGallery() {
-        val intent = Intent(this, GalleryActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION
-        }
-        startActivity(intent)
-        overridePendingTransition(0, 0)
-    }
 
     @Suppress("DEPRECATION")
     private fun openHistory() {
@@ -455,68 +447,60 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // Tema kartı
-        val currentTheme = Store.themeMode(this)
-        val themeButtons = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            val modes = listOf(
-                Triple("Sistem", Store.THEME_SYSTEM, 0),
-                Triple("Açık", Store.THEME_LIGHT, 1),
-                Triple("Koyu", Store.THEME_DARK, 2)
+        val themeCardHolder = FrameLayout(this)
+        fun updateThemeSegment() {
+            themeCardHolder.removeAllViews()
+            val currentTheme = Store.themeMode(this@SettingsActivity)
+            val themeModes = listOf(
+                Pair("Sistem", Store.THEME_SYSTEM),
+                Pair("Açık", Store.THEME_LIGHT),
+                Pair("Koyu", Store.THEME_DARK)
             )
-            modes.forEach { (title, modeVal, index) ->
-                val isSel = (currentTheme == modeVal)
-                val btnKind = if (isSel) Ui.Kind.FILLED else Ui.Kind.TONAL
-                val btn = Ui.button(this@SettingsActivity, title, btnKind) {
-                    if (Store.themeMode(this@SettingsActivity) != modeVal) {
-                        Store.setThemeMode(this@SettingsActivity, modeVal)
-                        Store.applyTheme(this@SettingsActivity)
-                    }
+            val currentIndex = themeModes.indexOfFirst { it.second == currentTheme }.coerceAtLeast(0)
+            val titles = themeModes.map { it.first }
+            val seg = Ui.segmentedControl(this@SettingsActivity, titles, currentIndex) { idx ->
+                val newMode = themeModes[idx].second
+                if (Store.themeMode(this@SettingsActivity) != newMode) {
+                    Store.setThemeMode(this@SettingsActivity, newMode)
+                    Store.applyTheme(this@SettingsActivity)
                 }
-                addView(btn, Ui.lp(0, Ui.WRAP, 1f, l = if (index > 0) d(4) else 0))
             }
+            themeCardHolder.addView(seg, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
         }
+        updateThemeSegment()
         val themeCard = Ui.card(this).apply {
             addView(label("Uygulama Teması"))
             addView(helper("Arayüz rengini tercihine göre ayarlar"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4), b = d(12)))
-            addView(themeButtons, Ui.lp(Ui.MATCH, Ui.WRAP))
+            addView(themeCardHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
         }
 
         // Video Kalitesi kartı
-        val qualityButtons = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-        fun updateQualityButtons() {
-            qualityButtons.removeAllViews()
+        val qualityCardHolder = FrameLayout(this)
+        fun updateQualitySegment() {
+            qualityCardHolder.removeAllViews()
             val currentQuality = Store.videoQuality(this@SettingsActivity)
-            val qualities = listOf(
-                Triple("En iyi", Store.QUALITY_BEST, 0),
-                Triple("1080p", Store.QUALITY_1080P, 1),
-                Triple("720p", Store.QUALITY_720P, 2),
-                Triple("Ses", Store.QUALITY_AUDIO_ONLY, 3)
+            val qualityList = listOf(
+                Pair("En iyi", Store.QUALITY_BEST),
+                Pair("720p", Store.QUALITY_720P),
+                Pair("Ses", Store.QUALITY_AUDIO_ONLY)
             )
-            qualities.forEach { (title, qVal, index) ->
-                val isSel = (currentQuality == qVal)
-                val btnKind = if (isSel) Ui.Kind.FILLED else Ui.Kind.TONAL
-                val btn = Ui.button(this@SettingsActivity, title, btnKind) {
-                    if (Store.videoQuality(this@SettingsActivity) != qVal) {
-                        Store.setVideoQuality(this@SettingsActivity, qVal)
-                        updateQualityButtons()
-                        toast("Video kalitesi güncellendi: $title")
-                    }
-                }.apply {
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
-                    setPadding(d(8), 0, d(8), 0)
-                    maxLines = 1
-                    ellipsize = null
+            val currentIndex = qualityList.indexOfFirst { it.second == currentQuality }.coerceAtLeast(0)
+            val titles = qualityList.map { it.first }
+            val seg = Ui.segmentedControl(this@SettingsActivity, titles, currentIndex) { idx ->
+                val qVal = qualityList[idx].second
+                if (Store.videoQuality(this@SettingsActivity) != qVal) {
+                    Store.setVideoQuality(this@SettingsActivity, qVal)
+                    updateQualitySegment()
+                    toast("Video kalitesi güncellendi: ${qualityList[idx].first}")
                 }
-                qualityButtons.addView(btn, Ui.lp(0, Ui.WRAP, 1f, l = if (index > 0) d(4) else 0))
             }
+            qualityCardHolder.addView(seg, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
         }
-        updateQualityButtons()
+        updateQualitySegment()
         val qualityCard = Ui.card(this).apply {
             addView(label("Video Kalitesi"))
             addView(helper("İndirilen videoların çözünürlük kalitesini belirler"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4), b = d(12)))
-            addView(qualityButtons, Ui.lp(Ui.MATCH, Ui.WRAP))
+            addView(qualityCardHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
         }
 
         album = Ui.field(this, "GalleryDl").apply {
@@ -614,7 +598,8 @@ class SettingsActivity : AppCompatActivity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(d(16), 0, d(16), d(84))
+            setPadding(d(16), 0, d(16), d(100))
+            clipToPadding = false
             addView(section("Genel"), Ui.lp(Ui.WRAP, Ui.WRAP, b = d(8)))
             addView(ytCard, Ui.lp(Ui.MATCH, Ui.WRAP))
             addView(gdlCard, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(10)))
@@ -628,8 +613,13 @@ class SettingsActivity : AppCompatActivity() {
             addView(section("Geçmiş"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(24), b = d(8)))
             addView(historyCard, Ui.lp(Ui.MATCH, Ui.WRAP))
         }
+        val bottomSpacer = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(this@SettingsActivity, 110))
+        }
+        content.addView(bottomSpacer)
         val scroll = ScrollView(this).apply {
             isFillViewport = false
+            clipToPadding = false
             addView(content)
         }
 
@@ -645,20 +635,18 @@ class SettingsActivity : AppCompatActivity() {
             addView(scroll, Ui.lp(Ui.MATCH, 0, 1f))
         }
 
-        // Floating Liquid Glass Bottom Navigation Bar (4 items: İndir, Galeri, Geçmiş, Ayarlar)
+        // Floating Liquid Glass Bottom Navigation Bar (3 items)
         val navItems = listOf(
             Ui.NavItem("İndir", R.drawable.ic_tab_download),
-            Ui.NavItem("Galeri", R.drawable.ic_tab_gallery),
             Ui.NavItem("Geçmiş", R.drawable.ic_history),
             Ui.NavItem("Ayarlar", R.drawable.ic_tab_settings)
         )
 
-        val navBar = Ui.floatingNavBar(this, navItems, selectedIndex = 3) { index ->
+        val navBar = Ui.floatingNavBar(this, navItems, selectedIndex = 2) { index ->
             when (index) {
                 0 -> openMain()
-                1 -> openGallery()
-                2 -> openHistory()
-                3 -> { /* Zaten Ayarlar ekranındayız */ }
+                1 -> openHistory()
+                2 -> { /* Zaten Ayarlar ekranındayız */ }
             }
         }
 

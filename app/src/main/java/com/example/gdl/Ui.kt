@@ -11,6 +11,7 @@ import android.graphics.drawable.RippleDrawable
 import android.graphics.drawable.StateListDrawable
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -23,6 +24,7 @@ import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import com.example.gdl.R
 
 /** Kod ile çizilen ekranlar için güvenli dinamik renkler ve bileşenler. */
 object Ui {
@@ -65,15 +67,16 @@ object Ui {
         }
     }
 
-    fun bg(c: Context?): Int = if (isDark(c)) safeColor("#0F0F12", Color.BLACK) else safeColor("#F5F5FA", Color.WHITE)
-    fun cardBg(c: Context?): Int = if (isDark(c)) safeColor("#1C1C24", Color.DKGRAY) else Color.WHITE
-    fun line(c: Context?): Int = if (isDark(c)) safeColor("#282834", Color.GRAY) else safeColor("#E3E3EC", Color.LTGRAY)
+    fun bg(c: Context?): Int = if (isDark(c)) safeColor("#000000", Color.BLACK) else safeColor("#F2F2F7", Color.WHITE)
+    fun cardBg(c: Context?): Int = if (isDark(c)) safeColor("#1C1C1E", Color.DKGRAY) else Color.WHITE
+    fun line(c: Context?): Int = if (isDark(c)) safeColor("#2C2C2E", Color.GRAY) else safeColor("#E5E5EA", Color.LTGRAY)
     fun fieldLine(c: Context?): Int = if (isDark(c)) safeColor("#383848", Color.GRAY) else safeColor("#D3D3E0", Color.LTGRAY)
     fun textClr(c: Context?): Int = if (isDark(c)) Color.WHITE else safeColor("#1B1B1F", Color.BLACK)
-    fun mutedClr(c: Context?): Int = if (isDark(c)) safeColor("#9E9EB2", Color.GRAY) else safeColor("#6B6B7B", Color.GRAY)
+    @Suppress("UNUSED_PARAMETER")
+    fun mutedClr(c: Context?): Int = if (isDark(c)) safeColor("#98989D", Color.GRAY) else safeColor("#8E8E93", Color.GRAY)
     fun hintClr(c: Context?): Int = if (isDark(c)) safeColor("#6E6E82", Color.GRAY) else safeColor("#9A9AAA", Color.GRAY)
-    fun primary(c: Context?): Int = if (isDark(c)) safeColor("#389BFF", Color.BLUE) else safeColor("#007AFF", Color.BLUE)
-    fun primaryBg(c: Context?): Int = if (isDark(c)) safeColor("#16263D", Color.DKGRAY) else safeColor("#EBF3FF", Color.LTGRAY)
+    fun primary(c: Context?): Int = if (isDark(c)) safeColor("#0A84FF", Color.BLUE) else safeColor("#007AFF", Color.BLUE)
+    fun primaryBg(c: Context?): Int = if (isDark(c)) safeColor("#1C2D4A", Color.DKGRAY) else safeColor("#EBF3FF", Color.LTGRAY)
 
     val OK = safeColor("#15803D", Color.GREEN)
     val OK_BG = safeColor("#DFF5E6", Color.LTGRAY)
@@ -118,17 +121,9 @@ object Ui {
         if (c == null) return Typeface.create(Typeface.DEFAULT, style)
         return try {
             val tf = ResourcesCompat.getFont(c, R.font.space_grotesk)
-            if (tf != null) {
-                Typeface.create(tf, style)
-            } else {
-                Typeface.create(Typeface.DEFAULT, style)
-            }
+            if (tf != null) Typeface.create(tf, style) else Typeface.create(Typeface.DEFAULT, style)
         } catch (_: Throwable) {
-            try {
-                Typeface.create(Typeface.DEFAULT, style)
-            } catch (_: Throwable) {
-                Typeface.DEFAULT
-            }
+            Typeface.create(Typeface.DEFAULT, style)
         }
     }
 
@@ -145,12 +140,12 @@ object Ui {
 
     fun button(c: Context, label: String, kind: Kind, onClick: () -> Unit): Button {
         val (bgClr, fgClr, lineClr) = when (kind) {
-            Kind.FILLED -> Triple(primary(c), Color.WHITE, primary(c))
-            Kind.TONAL -> Triple(primaryBg(c), primary(c), primaryBg(c))
+            Kind.FILLED -> Triple(primary(c), Color.WHITE, Color.TRANSPARENT)
+            Kind.TONAL -> Triple(if (isDark(c)) safeColor("#3A3A3C", Color.DKGRAY) else safeColor("#E5E5EA", Color.LTGRAY), textClr(c), Color.TRANSPARENT)
             Kind.OUTLINE -> Triple(cardBg(c), textClr(c), fieldLine(c))
             Kind.DANGER -> Triple(cardBg(c), ERR, ERR_LINE)
         }
-        val r = dp(c, 14).toFloat()
+        val r = dp(c, 15).toFloat()
         return Button(c).apply {
             text = label
             isAllCaps = false
@@ -161,8 +156,11 @@ object Ui {
             minHeight = dp(c, 48)
             minimumHeight = dp(c, 48)
             setPadding(dp(c, 16), 0, dp(c, 16), 0)
-            background = ripple(shape(bgClr, r, lineClr, dp(c, 1)), r)
-            setOnClickListener { onClick() }
+            background = ripple(shape(bgClr, r, lineClr, if (lineClr != Color.TRANSPARENT) dp(c, 1) else 0), r)
+            setOnClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onClick()
+            }
         }
     }
 
@@ -170,7 +168,8 @@ object Ui {
         orientation = LinearLayout.VERTICAL
         val p = dp(c, 16)
         setPadding(p, p, p, p)
-        background = shape(cardBg(c), dp(c, 18).toFloat(), line(c), dp(c, 1))
+        val borderClr = if (isDark(c)) safeColor("#2C2C2E", Color.GRAY) else safeColor("#1A000000", Color.LTGRAY)
+        background = shape(cardBg(c), dp(c, 20).toFloat(), borderClr, dp(c, 1))
     }
 
     fun field(c: Context, hintText: String): EditText = EditText(c).apply {
@@ -180,14 +179,83 @@ object Ui {
         setHintTextColor(hintClr(c))
         typeface = font(c, bold = false)
         val r = dp(c, 12).toFloat()
+        val fieldBg = if (isDark(c)) safeColor("#2C2C2E", Color.DKGRAY) else safeColor("#F2F2F7", Color.LTGRAY)
         background = StateListDrawable().apply {
             addState(
                 intArrayOf(android.R.attr.state_focused),
-                shape(bg(c), r, primary(c), dp(c, 2))
+                shape(fieldBg, r, primary(c), dp(c, 2))
             )
-            addState(intArrayOf(), shape(bg(c), r, fieldLine(c), dp(c, 1)))
+            addState(intArrayOf(), shape(fieldBg, r, Color.TRANSPARENT, 0))
         }
         setPadding(dp(c, 14), dp(c, 12), dp(c, 14), dp(c, 12))
+    }
+
+    fun segmentedControl(
+        c: Context,
+        items: List<String>,
+        selectedIndex: Int,
+        onSelect: (Int) -> Unit
+    ): View {
+        val isDarkTheme = isDark(c)
+        val capsuleBg = if (isDarkTheme) safeColor("#141416", Color.DKGRAY) else safeColor("#E5E5EA", Color.LTGRAY)
+        val capsuleRadius = dp(c, 16).toFloat()
+        
+        val container = LinearLayout(c).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val pad = dp(c, 3)
+            setPadding(pad, pad, pad, pad)
+            background = shape(capsuleBg, capsuleRadius)
+        }
+
+        items.forEachIndexed { index, title ->
+            val isSelected = (index == selectedIndex)
+            val btnRadius = dp(c, 13).toFloat()
+            
+            val itemBg = if (isSelected) {
+                if (isDarkTheme) safeColor("#3A3A3C", Color.DKGRAY) else Color.WHITE
+            } else {
+                Color.TRANSPARENT
+            }
+            
+            val textColor = if (isSelected) {
+                if (isDarkTheme) Color.WHITE else Color.parseColor("#1C1C1E")
+            } else {
+                Color.parseColor("#8E8E93")
+            }
+
+            val tv = TextView(c).apply {
+                text = title
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
+                setTextColor(textColor)
+                typeface = font(c, bold = isSelected)
+                gravity = Gravity.CENTER
+                maxLines = 1
+                ellipsize = null
+                
+                val pV = dp(c, 8)
+                val pH = dp(c, 10)
+                setPadding(pH, pV, pH, pV)
+                
+                background = ripple(shape(itemBg, btnRadius), btnRadius)
+                if (isSelected) {
+                    elevation = dp(c, 2).toFloat()
+                }
+                
+                setOnClickListener {
+                    it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    if (selectedIndex != index) {
+                        onSelect(index)
+                    }
+                }
+            }
+            container.addView(tv, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                if (index > 0) {
+                    setMargins(dp(c, 2), 0, 0, 0)
+                }
+            })
+        }
+        return container
     }
 
     fun pill(c: Context, s: String, fg: Int, bg: Int): TextView =
@@ -204,7 +272,10 @@ object Ui {
             contentDescription = desc
             scaleType = ImageView.ScaleType.CENTER
             background = ripple(shape(Color.TRANSPARENT, dp(c, 24).toFloat()), dp(c, 24).toFloat())
-            setOnClickListener { onClick() }
+            setOnClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onClick()
+            }
         }
 
     fun header(c: Context, title: String, leading: View?, trailing: View?): LinearLayout =
@@ -242,8 +313,10 @@ object Ui {
         selectedIndex: Int,
         onSelect: (Int) -> Unit
     ): LinearLayout {
-        val glassBgColor = if (isDark(c)) safeColor("#CC1A1A24", Color.BLACK) else safeColor("#E6FFFFFF", Color.WHITE)
-        val borderWhite = if (isDark(c)) safeColor("#383848", Color.DKGRAY) else safeColor("#A0FFFFFF", Color.LTGRAY)
+        val isDarkTheme = isDark(c)
+        val glassBgColor = if (isDarkTheme) safeColor("#F21C1C1E", Color.BLACK) else safeColor("#F4FFFFFF", Color.WHITE)
+        val borderWhite = if (isDarkTheme) safeColor("#40FFFFFF", Color.DKGRAY) else safeColor("#D1D1D6", Color.LTGRAY)
+        val strokeWidth = (1.5f * (c.resources.displayMetrics.density)).toInt()
         val pillRadius = 999f
 
         return LinearLayout(c).apply {
@@ -252,8 +325,8 @@ object Ui {
             val pV = dp(c, 4)
             val pH = dp(c, 6)
             setPadding(pH, pV, pH, pV)
-            background = shape(glassBgColor, pillRadius, borderWhite, dp(c, 1))
-            elevation = dp(c, 10).toFloat()
+            background = shape(glassBgColor, pillRadius, borderWhite, strokeWidth)
+            elevation = dp(c, 14).toFloat()
 
             items.forEachIndexed { index, item ->
                 val isSelected = (index == selectedIndex)
@@ -277,24 +350,33 @@ object Ui {
                     ellipsize = null
                 }
 
+                val tabBg = if (isSelected) {
+                    if (isDarkTheme) {
+                        shape(Color.parseColor("#25FFFFFF"), 999f, Color.parseColor("#40FFFFFF"), dp(c, 1))
+                    } else {
+                        shape(Color.parseColor("#18007AFF"), 999f, Color.parseColor("#30007AFF"), dp(c, 1))
+                    }
+                } else {
+                    shape(Color.TRANSPARENT, 999f)
+                }
+
                 val tabCell = LinearLayout(c).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
                     minimumWidth = dp(c, 68)
-                    val pTabV = dp(c, 6)
-                    val pTabH = dp(c, 14)
+                    val pTabV = dp(c, 4)
+                    val pTabH = dp(c, 10)
                     setPadding(pTabH, pTabV, pTabH, pTabV)
 
-                    background = if (isSelected) {
-                        ripple(shape(primaryBg(c), pillRadius), pillRadius)
-                    } else {
-                        ripple(shape(Color.TRANSPARENT, pillRadius), pillRadius)
-                    }
+                    background = ripple(tabBg, 999f)
 
                     addView(icon)
                     addView(label, lp(WRAP, WRAP, t = dp(c, 2)))
 
-                    setOnClickListener { onSelect(index) }
+                    setOnClickListener {
+                        it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        onSelect(index)
+                    }
                 }
 
                 addView(tabCell, lp(0, WRAP, 1f, l = dp(c, 2), r = dp(c, 2)))

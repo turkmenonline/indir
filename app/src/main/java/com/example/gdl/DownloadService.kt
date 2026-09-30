@@ -132,10 +132,8 @@ class DownloadService : Service() {
             val updatesDir = File(filesDir, "python_updates")
             val updatesPath = if (updatesDir.exists()) updatesDir.absolutePath else ""
             val quality = customQuality.takeIf { it.isNotEmpty() } ?: Store.videoQuality(this)
-            val ffmpegFile = File(applicationInfo.nativeLibraryDir, "libffmpeg.so")
-            val ffmpegPath = if (ffmpegFile.exists()) ffmpegFile.absolutePath else ""
             log = Python.getInstance().getModule("dl")
-                .callAttr("run", url, dir.absolutePath, cookiePath, Store.template(this), sink, updatesPath, quality, ffmpegPath)
+                .callAttr("run", url, dir.absolutePath, cookiePath, Store.template(this), sink, updatesPath, quality)
                 .toString()
 
             for (f in dir.walkTopDown().filter { it.isFile }) {

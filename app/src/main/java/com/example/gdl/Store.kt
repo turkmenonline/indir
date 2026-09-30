@@ -16,7 +16,6 @@ object Store {
     const val THEME_DARK = 2
 
     const val QUALITY_BEST = "best"
-    const val QUALITY_1080P = "1080p"
     const val QUALITY_720P = "720p"
     const val QUALITY_AUDIO_ONLY = "audio_only"
 
