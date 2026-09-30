@@ -53,7 +53,7 @@ class DownloadService : Service() {
 
         val activeDownloads = ConcurrentHashMap<Long, DownloadState>()
         val futures = ConcurrentHashMap<Long, Future<*>>()
-        val cancelFlags = ConcurrentHashMap<Long, Boolean>()
+        val cancelledTasks = ConcurrentHashMap.newKeySet<Long>()
         var onStateChanged: (() -> Unit)? = null
 
         private const val TAG = "DownloadService"
@@ -84,14 +84,19 @@ class DownloadService : Service() {
         fun cancelDownload(id: Long) {
             val future = futures[id]
             if (future != null) {
-                val cancelled = future.cancel(false)
-                if (cancelled) {
-                    activeDownloads.remove(id)
+                val cancelledBeforeStart = future.cancel(false)
+                if (cancelledBeforeStart) {
                     futures.remove(id)
-                    cancelFlags.remove(id)
+                    activeDownloads.remove(id)
+                    cancelledTasks.remove(id)
                     onStateChanged?.invoke()
                 } else {
-                    cancelFlags[id] = true
+                    cancelledTasks.add(id)
+                    try {
+                        if (Python.isStarted()) {
+                            Python.getInstance().getModule("dl").callAttr("cancel_task", id.toString())
+                        }
+                    } catch (_: Exception) {}
                 }
             } else {
                 activeDownloads.remove(id)
@@ -168,7 +173,15 @@ class DownloadService : Service() {
 
         val future = executor.submit {
             try {
-                if (cancelFlags[id] == true) {
+                if (cancelledTasks.contains(id)) {
+                    val dir = File(cacheDir, "dl_$id")
+                    dir.deleteRecursively()
+                    Store.upsert(this, id, url, STATUS_INTERRUPTED, "Kullanıcı tarafından iptal edildi")
+                    nm.cancel(1)
+                    cancelledTasks.remove(id)
+                    activeDownloads.remove(id)
+                    onStateChanged?.invoke()
+                    stopIfIdle()
                     return@submit
                 }
                 state.detail = "Hazırlanıyor..."
@@ -176,7 +189,7 @@ class DownloadService : Service() {
                 process(id, url, customQuality, platform, state)
             } finally {
                 futures.remove(id)
-                cancelFlags.remove(id)
+                cancelledTasks.remove(id)
                 activeDownloads.remove(id)
                 onStateChanged?.invoke()
                 if (pending.decrementAndGet() == 0) stopIfIdle()
@@ -194,7 +207,7 @@ class DownloadService : Service() {
             }
             activeDownloads.clear()
             futures.clear()
-            cancelFlags.clear()
+            cancelledTasks.clear()
             onStateChanged?.invoke()
         }
     }
@@ -212,7 +225,7 @@ class DownloadService : Service() {
         var isCancelled = false
 
         try {
-            if (cancelFlags[id] == true) {
+            if (cancelledTasks.contains(id)) {
                 throw Exception("İptal edildi")
             }
             if (!Python.isStarted()) Python.start(AndroidPlatform(this))
@@ -223,7 +236,7 @@ class DownloadService : Service() {
                 cookiePath = cookieTmp.absolutePath
             }
             val sink = ProgressSink({ p, detail ->
-                if (cancelFlags[id] == true) {
+                if (cancelledTasks.contains(id)) {
                     throw Exception("İptal edildi")
                 }
                 activeDownloads[id]?.let { st ->
@@ -232,21 +245,21 @@ class DownloadService : Service() {
                 }
                 onStateChanged?.invoke()
                 nm.notify(1, progressNotif(platform, detail, p))
-            }, { cancelFlags[id] == true })
+            }, { cancelledTasks.contains(id) })
 
             val updatesDir = File(filesDir, "python_updates")
             val updatesPath = if (updatesDir.exists()) updatesDir.absolutePath else ""
             val quality = customQuality.takeIf { it.isNotEmpty() } ?: Store.videoQuality(this)
             log = Python.getInstance().getModule("dl")
-                .callAttr("run", url, dir.absolutePath, cookiePath, Store.template(this), sink, updatesPath, quality)
+                .callAttr("run", id.toString(), url, dir.absolutePath, cookiePath, Store.template(this), sink, updatesPath, quality)
                 .toString()
 
-            if (cancelFlags[id] == true) {
+            if (cancelledTasks.contains(id)) {
                 throw Exception("İptal edildi")
             }
 
             for (f in dir.walkTopDown().filter { it.isFile }) {
-                if (cancelFlags[id] == true) {
+                if (cancelledTasks.contains(id)) {
                     throw Exception("İptal edildi")
                 }
                 val mime = MimeTypeMap.getSingleton()
@@ -271,7 +284,7 @@ class DownloadService : Service() {
                 thumbnailBitmap = loadThumbnail(thumbFile)
             }
         } catch (e: Exception) {
-            if (e.message?.contains("İptal edildi") == true || cancelFlags[id] == true) {
+            if (e.message?.contains("İptal edildi") == true || cancelledTasks.contains(id)) {
                 isCancelled = true
                 log = "Kullanıcı tarafından iptal edildi"
             } else {
@@ -283,10 +296,14 @@ class DownloadService : Service() {
             cookieTmp.delete()
         }
 
-        if (isCancelled) {
+        if (isCancelled || cancelledTasks.contains(id)) {
+            dir.deleteRecursively()
             Store.upsert(this, id, url, STATUS_INTERRUPTED, "Kullanıcı tarafından iptal edildi")
             nm.cancel(1)
+            cancelledTasks.remove(id)
+            activeDownloads.remove(id)
             onStateChanged?.invoke()
+            stopIfIdle()
             return
         }
 

@@ -1,9 +1,9 @@
 package com.example.gdl
 
 import android.Manifest
-import android.app.AlertDialog
 import android.app.Dialog
 import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
@@ -200,6 +200,13 @@ class MainActivity : AppCompatActivity() {
             activeDownloadsContainer.visibility = View.GONE
         } else {
             activeDownloadsContainer.visibility = View.VISIBLE
+            val hasRunning = downloads.any { it.detail != "Sırada" }
+            val headerTitle = if (hasRunning) "ŞU ANDA İNDİRİLİYOR" else "SIRADAKİ İNDİRMELER"
+            val headerTv = Ui.text(this, headerTitle, 12f, Ui.mutedClr(this), true).apply {
+                setPadding(0, 0, 0, Ui.dp(this@MainActivity, 8))
+            }
+            activeDownloadsContainer.addView(headerTv)
+
             downloads.forEach { st ->
                 val card = createActiveDownloadRow(st)
                 activeDownloadsContainer.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -240,10 +247,33 @@ class MainActivity : AppCompatActivity() {
         topRow.addView(platformTv, Ui.lp(0, Ui.WRAP, 1f))
         topRow.addView(detailTv, Ui.lp(Ui.WRAP, Ui.WRAP, l = Ui.dp(c, 8)))
 
+        val isQueued = (st.detail == "Sırada")
+        val statusRow = LinearLayout(c).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val dotColor = if (isQueued) Ui.mutedClr(c) else Ui.primary(c)
+        val dotView = View(c).apply {
+            val dotSize = Ui.dp(c, 7)
+            background = Ui.shape(dotColor, dotSize.toFloat())
+            layoutParams = LinearLayout.LayoutParams(dotSize, dotSize).apply {
+                marginEnd = Ui.dp(c, 6)
+            }
+        }
+
+        val statusText = if (isQueued) "Sırada bekliyor" else "Şu anda indiriliyor"
+        val statusTv = Ui.text(c, statusText, 12f, Ui.mutedClr(c)).apply {
+            isSingleLine = true
+        }
+
+        statusRow.addView(dotView)
+        statusRow.addView(statusTv)
+
         val progressBar = ProgressBar(c, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             progressTintList = ColorStateList.valueOf(Ui.primary(c))
-            if (st.detail == "Sırada" || st.pct < 0) {
+            if (isQueued || st.pct < 0) {
                 isIndeterminate = true
             } else {
                 isIndeterminate = false
@@ -252,7 +282,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         card.addView(topRow, Ui.lp(Ui.MATCH, Ui.WRAP))
-        card.addView(progressBar, Ui.lp(Ui.MATCH, Ui.dp(c, 3), t = Ui.dp(c, 10)))
+        card.addView(statusRow, Ui.lp(Ui.MATCH, Ui.WRAP, t = Ui.dp(c, 4)))
+        card.addView(progressBar, Ui.lp(Ui.MATCH, Ui.dp(c, 3), t = Ui.dp(c, 8)))
 
         return card
     }
@@ -369,15 +400,7 @@ class MainActivity : AppCompatActivity() {
             background = Ui.ripple(Ui.shape(redBg, 999f), 999f)
             setOnClickListener {
                 it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                AlertDialog.Builder(context)
-                    .setTitle("İptal Onayı")
-                    .setMessage("İndirme iptal edilsin mi?")
-                    .setPositiveButton("Evet") { _, _ ->
-                        DownloadService.cancelDownload(id)
-                        dialog.dismiss()
-                    }
-                    .setNegativeButton("Vazgeç", null)
-                    .show()
+                showCancelConfirmationDialog(context, id, dialog)
             }
         }
 
@@ -399,6 +422,85 @@ class MainActivity : AppCompatActivity() {
 
         dialogUpdateHandler.removeCallbacks(dialogUpdateRunnable)
         dialogUpdateHandler.postDelayed(dialogUpdateRunnable, 1000)
+    }
+
+    private fun showCancelConfirmationDialog(context: Context, id: Long, parentDialog: Dialog?) {
+        val confirmDialog = Dialog(context)
+        confirmDialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        confirmDialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        val cardBgColor = if (Ui.isDark(context)) Color.parseColor("#1C1C1E") else Color.parseColor("#F8F8FA")
+        val borderClr = if (Ui.isDark(context)) Color.parseColor("#2C2C2E") else Color.parseColor("#E5E5EA")
+
+        val rootLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(Ui.dp(context, 20), Ui.dp(context, 20), Ui.dp(context, 20), Ui.dp(context, 20))
+            background = Ui.shape(cardBgColor, Ui.dp(context, 20).toFloat(), borderClr, Ui.dp(context, 1))
+            elevation = Ui.dp(context, 16).toFloat()
+        }
+
+        // Başlık: "İndirmeyi İptal Et?" (SpaceGrotesk, bold)
+        val titleTv = Ui.text(context, "İndirmeyi İptal Et?", 18f, Ui.textClr(context), true).apply {
+            setPadding(0, 0, 0, Ui.dp(context, 8))
+        }
+        rootLayout.addView(titleTv, Ui.lp(Ui.MATCH, Ui.WRAP))
+
+        // Açıklama: "Devam eden indirme durdurulacak ve dosya silinecektir." (mutedClr)
+        val descTv = Ui.text(context, "Devam eden indirme durdurulacak ve dosya silinecektir.", 14f, Ui.mutedClr(context)).apply {
+            setPadding(0, 0, 0, Ui.dp(context, 20))
+        }
+        rootLayout.addView(descTv, Ui.lp(Ui.MATCH, Ui.WRAP))
+
+        // Butonlar (Yan yana iki oval buton, radius 999f)
+        val buttonRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        // Solda: "Vazgeç" (Ui.Kind.TONAL / gri buton, diyaloğu kapatır)
+        val dismissBtn = Button(context).apply {
+            text = "Vazgeç"
+            isAllCaps = false
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextColor(Ui.textClr(context))
+            typeface = Ui.font(context, bold = true)
+            stateListAnimator = null
+            minHeight = Ui.dp(context, 48)
+            minimumHeight = Ui.dp(context, 48)
+            val tonalBg = if (Ui.isDark(context)) Color.parseColor("#3A3A3C") else Color.parseColor("#E5E5EA")
+            background = Ui.ripple(Ui.shape(tonalBg, 999f), 999f)
+            setOnClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                confirmDialog.dismiss()
+            }
+        }
+
+        // Sağda: "İptal Et" (Ui.Kind.DANGER / kırmızı buton, DownloadService.cancelDownload(id) çağırır)
+        val confirmCancelBtn = Button(context).apply {
+            text = "İptal Et"
+            isAllCaps = false
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextColor(Color.WHITE)
+            typeface = Ui.font(context, bold = true)
+            stateListAnimator = null
+            minHeight = Ui.dp(context, 48)
+            minimumHeight = Ui.dp(context, 48)
+            val redBg = Color.parseColor("#FF3B30")
+            background = Ui.ripple(Ui.shape(redBg, 999f), 999f)
+            setOnClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                DownloadService.cancelDownload(id)
+                confirmDialog.dismiss()
+                parentDialog?.dismiss()
+            }
+        }
+
+        buttonRow.addView(dismissBtn, Ui.lp(0, Ui.WRAP, 1f, r = Ui.dp(context, 8)))
+        buttonRow.addView(confirmCancelBtn, Ui.lp(0, Ui.WRAP, 1f, l = Ui.dp(context, 8)))
+        rootLayout.addView(buttonRow, Ui.lp(Ui.MATCH, Ui.WRAP))
+
+        confirmDialog.setContentView(rootLayout)
+        confirmDialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.85).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+        confirmDialog.show()
     }
 
     private fun updateOpenDetailDialog() {
