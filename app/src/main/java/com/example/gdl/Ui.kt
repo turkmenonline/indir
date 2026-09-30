@@ -13,6 +13,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -28,6 +29,18 @@ import com.example.gdl.R
 
 /** Kod ile çizilen ekranlar için güvenli dinamik renkler ve bileşenler. */
 object Ui {
+    fun animatePageIn(contentView: View, fromRight: Boolean) {
+        val width = contentView.resources.displayMetrics.widthPixels.toFloat()
+        contentView.translationX = if (fromRight) width * 0.35f else -width * 0.35f
+        contentView.alpha = 0.6f
+        contentView.animate()
+            .translationX(0f)
+            .alpha(1f)
+            .setDuration(220)
+            .setInterpolator(DecelerateInterpolator(1.8f))
+            .start()
+    }
+
     fun isDark(c: Context?): Boolean {
         if (c == null) return false
         return try {

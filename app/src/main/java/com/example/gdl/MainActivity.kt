@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
@@ -25,6 +26,8 @@ import java.io.File
 class MainActivity : AppCompatActivity() {
     private lateinit var input: EditText
     private lateinit var goButton: Button
+    private lateinit var mainContent: LinearLayout
+    private val currentIndex = 0
     private var selectedQuality = Store.QUALITY_BEST
 
     private fun helper(t: String): TextView = Ui.text(this, t, 12f, Ui.mutedClr(this))
@@ -93,7 +96,7 @@ class MainActivity : AppCompatActivity() {
             addView(buttons, Ui.lp(Ui.MATCH, Ui.WRAP))
         }
 
-        val mainContent = LinearLayout(this).apply {
+        mainContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.bg(this@MainActivity))
             setPadding(d(16), 0, d(16), d(100))
@@ -115,11 +118,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         val navBar = Ui.floatingNavBar(this, navItems, selectedIndex = 0) { index ->
-            when (index) {
-                0 -> { /* Zaten İndir ekranındayız */ }
-                1 -> openHistory()
-                2 -> openSettings()
-            }
+            navigateToTab(index, 0)
         }
 
         val navParams = FrameLayout.LayoutParams(
@@ -138,12 +137,14 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
         Ui.setupEdgeToEdge(this, root)
         handleIntent(intent)
+        handlePageAnimation(intent)
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIntent(intent)
+        handlePageAnimation(intent)
     }
 
     private fun handleIntent(intent: Intent?) {
@@ -154,23 +155,72 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun handlePageAnimation(intent: Intent?) {
+        val fromIndex = intent?.getIntExtra("from_index", -1) ?: -1
+        if (fromIndex != -1) {
+            val fromRight = fromIndex < currentIndex
+            Ui.animatePageIn(mainContent, fromRight)
+        }
+    }
 
     @Suppress("DEPRECATION")
-    private fun openHistory() {
-        val intent = Intent(this, HistoryActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION
+    private fun navigateToTab(targetIndex: Int, currentIndex: Int) {
+        if (targetIndex == currentIndex) return
+        val intent = when (targetIndex) {
+            0 -> Intent(this, MainActivity::class.java)
+            1 -> Intent(this, HistoryActivity::class.java)
+            2 -> Intent(this, SettingsActivity::class.java)
+            else -> return
+        }.apply {
+            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+            putExtra("from_index", this@MainActivity.currentIndex)
         }
         startActivity(intent)
         overridePendingTransition(0, 0)
     }
 
-    @Suppress("DEPRECATION")
-    private fun openSettings() {
-        val intent = Intent(this, SettingsActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NO_ANIMATION
+    private var touchDownX = 0f
+    private var touchDownY = 0f
+    private var isHorizontalSwipe = false
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.action) {
+            MotionEvent.ACTION_DOWN -> {
+                touchDownX = ev.rawX
+                touchDownY = ev.rawY
+                isHorizontalSwipe = false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val deltaX = ev.rawX - touchDownX
+                val deltaY = ev.rawY - touchDownY
+                if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 25) {
+                    isHorizontalSwipe = true
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                if (isHorizontalSwipe) {
+                    val deltaX = ev.rawX - touchDownX
+                    if (Math.abs(deltaX) > 100) {
+                        if (deltaX > 0) {
+                            onSwipeRight()
+                        } else {
+                            onSwipeLeft()
+                        }
+                        isHorizontalSwipe = false
+                        return true
+                    }
+                }
+            }
         }
-        startActivity(intent)
-        overridePendingTransition(0, 0)
+        return super.dispatchTouchEvent(ev)
+    }
+
+    private fun onSwipeLeft() {
+        navigateToTab(1, 0)
+    }
+
+    private fun onSwipeRight() {
+        // no-op
     }
 
     private fun pasteFromClipboard() {
