@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -480,6 +481,44 @@ class SettingsActivity : AppCompatActivity() {
             addView(themeButtons, Ui.lp(Ui.MATCH, Ui.WRAP))
         }
 
+        // Video Kalitesi kartı
+        val qualityButtons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        fun updateQualityButtons() {
+            qualityButtons.removeAllViews()
+            val currentQuality = Store.videoQuality(this@SettingsActivity)
+            val qualities = listOf(
+                Triple("En iyi", Store.QUALITY_BEST, 0),
+                Triple("1080p", Store.QUALITY_1080P, 1),
+                Triple("720p", Store.QUALITY_720P, 2),
+                Triple("Ses", Store.QUALITY_AUDIO_ONLY, 3)
+            )
+            qualities.forEach { (title, qVal, index) ->
+                val isSel = (currentQuality == qVal)
+                val btnKind = if (isSel) Ui.Kind.FILLED else Ui.Kind.TONAL
+                val btn = Ui.button(this@SettingsActivity, title, btnKind) {
+                    if (Store.videoQuality(this@SettingsActivity) != qVal) {
+                        Store.setVideoQuality(this@SettingsActivity, qVal)
+                        updateQualityButtons()
+                        toast("Video kalitesi güncellendi: $title")
+                    }
+                }.apply {
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
+                    setPadding(d(8), 0, d(8), 0)
+                    maxLines = 1
+                    ellipsize = null
+                }
+                qualityButtons.addView(btn, Ui.lp(0, Ui.WRAP, 1f, l = if (index > 0) d(4) else 0))
+            }
+        }
+        updateQualityButtons()
+        val qualityCard = Ui.card(this).apply {
+            addView(label("Video Kalitesi"))
+            addView(helper("İndirilen videoların çözünürlük kalitesini belirler"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4), b = d(12)))
+            addView(qualityButtons, Ui.lp(Ui.MATCH, Ui.WRAP))
+        }
+
         album = Ui.field(this, "GalleryDl").apply {
             inputType = InputType.TYPE_CLASS_TEXT
             setText(Store.album(this@SettingsActivity))
@@ -581,6 +620,7 @@ class SettingsActivity : AppCompatActivity() {
             addView(gdlCard, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(10)))
             addView(section("Görünüm"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(24), b = d(8)))
             addView(themeCard, Ui.lp(Ui.MATCH, Ui.WRAP))
+            addView(qualityCard, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(10)))
             addView(section("Kaydetme"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(24), b = d(8)))
             addView(saveCard, Ui.lp(Ui.MATCH, Ui.WRAP))
             addView(section("Çerez"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(24), b = d(8)))

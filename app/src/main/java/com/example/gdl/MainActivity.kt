@@ -7,22 +7,34 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.inputmethod.EditorInfo
+import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
     private lateinit var input: EditText
+    private lateinit var goButton: Button
+    private var selectedQuality = Store.QUALITY_BEST
+
+    private fun helper(t: String): TextView = Ui.text(this, t, 12f, Ui.mutedClr(this))
 
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
             Store.applyTheme(this)
         } catch (_: Throwable) {}
         super.onCreate(savedInstanceState)
+        Store.cleanupPendingDownloads(this)
+        selectedQuality = Store.videoQuality(this)
 
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -46,16 +58,47 @@ class MainActivity : AppCompatActivity() {
                 } else false
             }
         }
+        val qualityButtons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        fun updateQualityButtons() {
+            qualityButtons.removeAllViews()
+            val qualities = listOf(
+                Triple("En iyi", Store.QUALITY_BEST, 0),
+                Triple("1080p", Store.QUALITY_1080P, 1),
+                Triple("720p", Store.QUALITY_720P, 2),
+                Triple("Ses", Store.QUALITY_AUDIO_ONLY, 3)
+            )
+            qualities.forEach { (title, qVal, index) ->
+                val isSel = (selectedQuality == qVal)
+                val btnKind = if (isSel) Ui.Kind.FILLED else Ui.Kind.TONAL
+                val btn = Ui.button(this@MainActivity, title, btnKind) {
+                    if (selectedQuality != qVal) {
+                        selectedQuality = qVal
+                        updateQualityButtons()
+                    }
+                }.apply {
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
+                    setPadding(d(8), 0, d(8), 0)
+                    maxLines = 1
+                    ellipsize = null
+                }
+                qualityButtons.addView(btn, Ui.lp(0, Ui.WRAP, 1f, l = if (index > 0) d(4) else 0))
+            }
+        }
+        updateQualityButtons()
+
         val paste = Ui.button(this, "Yapıştır", Ui.Kind.TONAL) { pasteFromClipboard() }
-        val go = Ui.button(this, "İndir", Ui.Kind.FILLED) { start(input.text.toString()) }
+        goButton = Ui.button(this, "İndir", Ui.Kind.FILLED) { start(input.text.toString()) }
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(paste, Ui.lp(0, Ui.WRAP, 1f, r = d(4)))
-            addView(go, Ui.lp(0, Ui.WRAP, 1f, l = d(4)))
+            addView(goButton, Ui.lp(0, Ui.WRAP, 1f, l = d(4)))
         }
         val inputCard = Ui.card(this).apply {
             addView(input, Ui.lp(Ui.MATCH, Ui.WRAP))
-            addView(buttons, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12)))
+            addView(qualityButtons, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12), b = d(12)))
+            addView(buttons, Ui.lp(Ui.MATCH, Ui.WRAP))
         }
 
         val mainContent = LinearLayout(this).apply {
@@ -98,6 +141,21 @@ class MainActivity : AppCompatActivity() {
         }
         setContentView(root)
         Ui.setupEdgeToEdge(this, root)
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val sharedUrl = intent?.getStringExtra("shared_url")
+        if (!sharedUrl.isNullOrBlank()) {
+            input.setText(sharedUrl)
+            start(sharedUrl)
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -145,8 +203,14 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Geçerli link bulunamadı", Toast.LENGTH_SHORT).show()
             return
         }
-        val i = Intent(this, DownloadService::class.java)
-        i.putExtra(DownloadService.EXTRA_URL, url)
+        startDownload(url)
+    }
+
+    private fun startDownload(url: String) {
+        val i = Intent(this, DownloadService::class.java).apply {
+            putExtra(DownloadService.EXTRA_URL, url)
+            putExtra("custom_quality", selectedQuality)
+        }
         startForegroundService(i)
         input.setText("")
     }

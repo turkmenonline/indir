@@ -11,6 +11,18 @@ import tarfile
 import urllib.request
 import zipfile
 
+try:
+    import certifi
+    ca_bundle = certifi.where()
+    os.environ["SSL_CERT_FILE"] = ca_bundle
+    os.environ["REQUESTS_CA_BUNDLE"] = ca_bundle
+    ssl._create_default_https_context = lambda: ssl.create_default_context(cafile=ca_bundle)
+except Exception:
+    try:
+        ssl._create_default_https_context = ssl._create_unverified_context
+    except Exception:
+        pass
+
 YT_FIRST = ("youtube.com", "youtu.be", "tiktok.com", "vimeo.com",
             "facebook.com", "fb.watch", "twitch.tv", "dailymotion.com")
 
@@ -70,13 +82,13 @@ def get_versions_json(updates_dir=None):
 
 
 def _create_ssl_context():
+    ctx = ssl.create_default_context()
     try:
-        return ssl._create_unverified_context()
+        import certifi
+        ctx.load_verify_locations(cafile=certifi.where())
     except Exception:
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        return ctx
+        pass
+    return ctx
 
 
 def _download_file(url, target_path):
@@ -285,6 +297,10 @@ def _gallery(url, dest, cookies, template):
     return buf.getvalue() + "(çıkış kodu: %s)" % code
 
 
+def scan_media(url, cookie_path=""):
+    return "[]"
+
+
 class _Log:
     def __init__(self):
         self.lines = []
@@ -302,7 +318,7 @@ class _Log:
         self.lines.append("hata: %s" % msg)
 
 
-def _ytdlp(url, dest, cookies, sink):
+def _ytdlp(url, dest, cookies, sink, quality="best", ffmpeg_path=""):
     import yt_dlp
     last = [-1]
 
@@ -318,15 +334,26 @@ def _ytdlp(url, dest, cookies, sink):
             sink.update(pct)
 
     log = _Log()
+    if quality == "1080p":
+        fmt = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best'
+    elif quality == "720p":
+        fmt = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best'
+    elif quality == "audio_only":
+        fmt = 'bestaudio/best'
+    else:
+        fmt = 'bestvideo+bestaudio/best'
+
     opts = {
         "outtmpl": os.path.join(dest, "%(title).80s [%(id)s].%(ext)s"),
-        "format": "best[ext=mp4]/best",
+        "format": fmt,
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
         "logger": log,
         "progress_hooks": [hook],
     }
+    if ffmpeg_path and os.path.exists(ffmpeg_path):
+        opts['ffmpeg_location'] = ffmpeg_path
     if cookies:
         opts["cookiefile"] = cookies
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -334,7 +361,7 @@ def _ytdlp(url, dest, cookies, sink):
     return "\n".join(log.lines) or "tamam"
 
 
-def run(url, dest, cookies, template, sink, updates_dir=None):
+def run(url, dest, cookies, template, sink, updates_dir=None, quality="best", ffmpeg_path=""):
     if updates_dir:
         setup_updates_path(updates_dir)
 
@@ -348,7 +375,7 @@ def run(url, dest, cookies, template, sink, updates_dir=None):
             if tool == "gallery":
                 out = _gallery(url, dest, cookies, template)
             else:
-                out = _ytdlp(url, dest, cookies, sink)
+                out = _ytdlp(url, dest, cookies, sink, quality, ffmpeg_path)
         except Exception as e:
             out = "%s: %s" % (type(e).__name__, e)
         parts.append("[%s]\n%s" % (tool, out.strip()))

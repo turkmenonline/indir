@@ -40,7 +40,7 @@ class DownloadService : Service() {
         private const val TAG = "DownloadService"
     }
 
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = Executors.newFixedThreadPool(2)
     private val pending = AtomicInteger(0)
     private lateinit var nm: NotificationManager
 
@@ -78,6 +78,7 @@ class DownloadService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val url = intent?.getStringExtra(EXTRA_URL)
+        val customQuality = intent?.getStringExtra("custom_quality") ?: ""
         val platform = url?.let { getPlatformName(it) } ?: "İndiriliyor"
         startForeground(
             1,
@@ -94,7 +95,7 @@ class DownloadService : Service() {
         onChange?.invoke()
         executor.execute {
             try {
-                process(id, url)
+                process(id, url, customQuality)
             } finally {
                 if (pending.decrementAndGet() == 0) stopIfIdle()
             }
@@ -102,7 +103,7 @@ class DownloadService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun process(id: Long, url: String) {
+    private fun process(id: Long, url: String, customQuality: String) {
         val platform = getPlatformName(url)
         Store.upsert(this, id, url, "İndiriliyor", "")
         onChange?.invoke()
@@ -130,8 +131,11 @@ class DownloadService : Service() {
             }
             val updatesDir = File(filesDir, "python_updates")
             val updatesPath = if (updatesDir.exists()) updatesDir.absolutePath else ""
+            val quality = customQuality.takeIf { it.isNotEmpty() } ?: Store.videoQuality(this)
+            val ffmpegFile = File(applicationInfo.nativeLibraryDir, "libffmpeg.so")
+            val ffmpegPath = if (ffmpegFile.exists()) ffmpegFile.absolutePath else ""
             log = Python.getInstance().getModule("dl")
-                .callAttr("run", url, dir.absolutePath, cookiePath, Store.template(this), sink, updatesPath)
+                .callAttr("run", url, dir.absolutePath, cookiePath, Store.template(this), sink, updatesPath, quality, ffmpegPath)
                 .toString()
 
             for (f in dir.walkTopDown().filter { it.isFile }) {

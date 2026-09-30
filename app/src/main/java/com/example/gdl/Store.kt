@@ -15,6 +15,16 @@ object Store {
     const val THEME_LIGHT = 1
     const val THEME_DARK = 2
 
+    const val QUALITY_BEST = "best"
+    const val QUALITY_1080P = "1080p"
+    const val QUALITY_720P = "720p"
+    const val QUALITY_AUDIO_ONLY = "audio_only"
+
+    fun videoQuality(c: Context): String = prefs(c).getString("video_quality", QUALITY_BEST) ?: QUALITY_BEST
+    fun setVideoQuality(c: Context, q: String) {
+        prefs(c).edit().putString("video_quality", q).apply()
+    }
+
     private fun prefs(c: Context) = c.getSharedPreferences("gdl", Context.MODE_PRIVATE)
 
     fun themeMode(c: Context): Int = prefs(c).getInt("theme_mode", THEME_SYSTEM)
@@ -49,6 +59,25 @@ object Store {
     fun history(c: Context): List<JSONObject> {
         val arr = JSONArray(prefs(c).getString("history", "[]"))
         return (0 until arr.length()).map { arr.getJSONObject(it) }
+    }
+
+    @Synchronized
+    fun cleanupPendingDownloads(c: Context) {
+        val list = history(c).toMutableList()
+        var changed = false
+        for (i in 0 until list.size) {
+            val item = list[i]
+            val status = item.optString("status", "")
+            if (status == "İndiriliyor" || status == "Sırada") {
+                item.put("status", "Yarıda kaldı")
+                changed = true
+            }
+        }
+        if (changed) {
+            val arr = JSONArray()
+            list.forEach { arr.put(it) }
+            prefs(c).edit().putString("history", arr.toString()).apply()
+        }
     }
 
     @Synchronized
