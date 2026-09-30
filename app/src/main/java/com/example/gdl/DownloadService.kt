@@ -12,25 +12,35 @@ import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.MediaStore
 import android.util.Log
 import android.webkit.MimeTypeMap
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import androidx.core.net.toUri
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicInteger
 
-class ProgressSink(private val f: (Int, String) -> Unit) {
+class ProgressSink(private val f: (Int, String) -> Unit, private val checkCancelled: () -> Boolean = { false }) {
     @Suppress("unused")
-    fun updateProgress(p: Int, detail: String) { f(p, detail) }
+    fun updateProgress(p: Int, detail: String) {
+        if (checkCancelled()) throw RuntimeException("İptal edildi")
+        f(p, detail)
+    }
+    @Suppress("unused")
+    fun isCancelled(): Boolean = checkCancelled()
 }
 
 class DownloadService : Service() {
-    data class DownloadState(val id: Long, val platform: String, val url: String, var pct: Int, var detail: String)
+    data class DownloadState(val id: Long, val platform: String, val url: String, var pct: Int, var detail: String, val startTime: Long)
 
     companion object {
         const val EXTRA_URL = "url"
@@ -42,12 +52,55 @@ class DownloadService : Service() {
         const val STATUS_INTERRUPTED = "Yarıda kaldı"
 
         val activeDownloads = ConcurrentHashMap<Long, DownloadState>()
+        val futures = ConcurrentHashMap<Long, Future<*>>()
+        val cancelFlags = ConcurrentHashMap<Long, Boolean>()
         var onStateChanged: (() -> Unit)? = null
 
         private const val TAG = "DownloadService"
+
+        fun normalizeUrl(rawUrl: String): String {
+            var u = rawUrl.trim()
+            try {
+                val uri = u.toUri()
+                val query = uri.query
+                if (!query.isNullOrEmpty()) {
+                    val params = query.split("&")
+                    val filteredParams = params.filter { !it.startsWith("utm_", ignoreCase = true) }
+                    val newQuery = if (filteredParams.isNotEmpty()) filteredParams.joinToString("&") else ""
+                    val builder = uri.buildUpon().query(newQuery)
+                    u = builder.build().toString()
+                }
+            } catch (_: Exception) {}
+            if (u.endsWith("/")) {
+                val uri = u.toUri()
+                val path = uri.path ?: ""
+                if (path.length > 1) {
+                    u = u.removeSuffix("/")
+                }
+            }
+            return u
+        }
+
+        fun cancelDownload(id: Long) {
+            val future = futures[id]
+            if (future != null) {
+                val cancelled = future.cancel(false)
+                if (cancelled) {
+                    activeDownloads.remove(id)
+                    futures.remove(id)
+                    cancelFlags.remove(id)
+                    onStateChanged?.invoke()
+                } else {
+                    cancelFlags[id] = true
+                }
+            } else {
+                activeDownloads.remove(id)
+                onStateChanged?.invoke()
+            }
+        }
     }
 
-    private val executor = Executors.newFixedThreadPool(2)
+    private val executor = Executors.newSingleThreadExecutor()
     private val pending = AtomicInteger(0)
     private lateinit var nm: NotificationManager
 
@@ -84,33 +137,52 @@ class DownloadService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val url = intent?.getStringExtra(EXTRA_URL)
+        val rawUrl = intent?.getStringExtra(EXTRA_URL)
         val customQuality = intent?.getStringExtra("custom_quality") ?: ""
-        val platform = url?.let { getPlatformName(it) } ?: "İndiriliyor"
+        if (rawUrl == null) {
+            stopIfIdle()
+            return START_NOT_STICKY
+        }
+        val url = normalizeUrl(rawUrl)
+        val platform = getPlatformName(url)
+
+        val existing = activeDownloads.values.find { normalizeUrl(it.url) == url }
+        if (existing != null) {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(this, "Bu indirme zaten devam ediyor", Toast.LENGTH_SHORT).show()
+            }
+            stopIfIdle()
+            return START_NOT_STICKY
+        }
+
         startForeground(
             1,
             progressNotif(platform, "Hazırlanıyor…", -1),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         )
-        if (url == null) {
-            stopIfIdle()
-            return START_NOT_STICKY
-        }
         pending.incrementAndGet()
         val id = System.currentTimeMillis()
-        val state = DownloadState(id, platform, url, -1, "Hazırlanıyor...")
+        val state = DownloadState(id, platform, url, -1, "Sırada", id)
         activeDownloads[id] = state
         onStateChanged?.invoke()
 
-        executor.execute {
+        val future = executor.submit {
             try {
-                process(id, url, customQuality, platform)
+                if (cancelFlags[id] == true) {
+                    return@submit
+                }
+                state.detail = "Hazırlanıyor..."
+                onStateChanged?.invoke()
+                process(id, url, customQuality, platform, state)
             } finally {
+                futures.remove(id)
+                cancelFlags.remove(id)
                 activeDownloads.remove(id)
                 onStateChanged?.invoke()
                 if (pending.decrementAndGet() == 0) stopIfIdle()
             }
         }
+        futures[id] = future
         return START_NOT_STICKY
     }
 
@@ -121,11 +193,13 @@ class DownloadService : Service() {
                 Store.upsert(this, st.id, st.url, STATUS_INTERRUPTED, "")
             }
             activeDownloads.clear()
+            futures.clear()
+            cancelFlags.clear()
             onStateChanged?.invoke()
         }
     }
 
-    private fun process(id: Long, url: String, customQuality: String, platform: String) {
+    private fun process(id: Long, url: String, customQuality: String, platform: String, state: DownloadState) {
         val dir = File(cacheDir, "dl_$id").apply { mkdirs() }
         val cookieTmp = File(cacheDir, "cookies_job.txt")
         var log = ""
@@ -135,8 +209,12 @@ class DownloadService : Service() {
         val savedFiles = mutableListOf<File>()
         var thumbnailBitmap: Bitmap? = null
         var success = false
+        var isCancelled = false
 
         try {
+            if (cancelFlags[id] == true) {
+                throw Exception("İptal edildi")
+            }
             if (!Python.isStarted()) Python.start(AndroidPlatform(this))
             var cookiePath = ""
             val cookies = File(filesDir, "cookies.txt")
@@ -144,14 +222,18 @@ class DownloadService : Service() {
                 cookies.copyTo(cookieTmp, overwrite = true)
                 cookiePath = cookieTmp.absolutePath
             }
-            val sink = ProgressSink { p, detail ->
+            val sink = ProgressSink({ p, detail ->
+                if (cancelFlags[id] == true) {
+                    throw Exception("İptal edildi")
+                }
                 activeDownloads[id]?.let { st ->
                     st.pct = p
                     st.detail = detail
                 }
                 onStateChanged?.invoke()
                 nm.notify(1, progressNotif(platform, detail, p))
-            }
+            }, { cancelFlags[id] == true })
+
             val updatesDir = File(filesDir, "python_updates")
             val updatesPath = if (updatesDir.exists()) updatesDir.absolutePath else ""
             val quality = customQuality.takeIf { it.isNotEmpty() } ?: Store.videoQuality(this)
@@ -159,7 +241,14 @@ class DownloadService : Service() {
                 .callAttr("run", url, dir.absolutePath, cookiePath, Store.template(this), sink, updatesPath, quality)
                 .toString()
 
+            if (cancelFlags[id] == true) {
+                throw Exception("İptal edildi")
+            }
+
             for (f in dir.walkTopDown().filter { it.isFile }) {
+                if (cancelFlags[id] == true) {
+                    throw Exception("İptal edildi")
+                }
                 val mime = MimeTypeMap.getSingleton()
                     .getMimeTypeFromExtension(f.extension.lowercase())
                 if (mime != null) {
@@ -182,11 +271,23 @@ class DownloadService : Service() {
                 thumbnailBitmap = loadThumbnail(thumbFile)
             }
         } catch (e: Exception) {
-            log = "Hata: ${e.message}"
-            Log.e(TAG, "Process error: ${e.message}", e)
+            if (e.message?.contains("İptal edildi") == true || cancelFlags[id] == true) {
+                isCancelled = true
+                log = "Kullanıcı tarafından iptal edildi"
+            } else {
+                log = "Hata: ${e.message}"
+                Log.e(TAG, "Process error: ${e.message}", e)
+            }
         } finally {
             dir.deleteRecursively()
             cookieTmp.delete()
+        }
+
+        if (isCancelled) {
+            Store.upsert(this, id, url, STATUS_INTERRUPTED, "Kullanıcı tarafından iptal edildi")
+            nm.cancel(1)
+            onStateChanged?.invoke()
+            return
         }
 
         if (success) {
@@ -196,6 +297,7 @@ class DownloadService : Service() {
             Store.upsert(this, id, url, STATUS_INTERRUPTED, log.takeLast(3000))
         }
         onStateChanged?.invoke()
+        nm.cancel(1)
 
         val ok = success
         val detailText = when {

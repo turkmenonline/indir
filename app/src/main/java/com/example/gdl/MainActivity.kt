@@ -1,17 +1,27 @@
 package com.example.gdl
 
 import android.Manifest
+import android.app.AlertDialog
+import android.app.Dialog
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.text.TextUtils
+import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
+import android.view.Window
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
@@ -19,6 +29,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
@@ -29,6 +40,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var activeDownloadsContainer: LinearLayout
     private val currentIndex = 0
     private var selectedQuality = Store.QUALITY_BEST
+
+    private var activeDetailDialog: Dialog? = null
+    private var activeDetailId: Long = -1L
+    private val dialogUpdateHandler = Handler(Looper.getMainLooper())
+    private val dialogUpdateRunnable = object : Runnable {
+        override fun run() {
+            if (activeDetailDialog != null && activeDetailId != -1L) {
+                updateOpenDetailDialog()
+                dialogUpdateHandler.postDelayed(this, 1000)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
@@ -146,12 +169,27 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        DownloadService.onStateChanged = { runOnUiThread { updateActiveBox() } }
+        DownloadService.onStateChanged = {
+            runOnUiThread {
+                updateActiveBox()
+                if (activeDetailDialog != null && activeDetailId != -1L) {
+                    if (!DownloadService.activeDownloads.containsKey(activeDetailId)) {
+                        activeDetailDialog?.dismiss()
+                    } else {
+                        updateOpenDetailDialog()
+                    }
+                }
+            }
+        }
         updateActiveBox()
     }
 
     override fun onStop() {
         DownloadService.onStateChanged = null
+        activeDetailDialog?.dismiss()
+        activeDetailDialog = null
+        activeDetailId = -1L
+        dialogUpdateHandler.removeCallbacks(dialogUpdateRunnable)
         super.onStop()
     }
 
@@ -179,6 +217,9 @@ class MainActivity : AppCompatActivity() {
             setPadding(d, d, d, d)
             val r = Ui.dp(c, 16).toFloat()
             background = Ui.shape(Ui.cardBg(c), r, Ui.line(c), Ui.dp(c, 1))
+            setOnClickListener {
+                showActiveDetailDialog(st.id)
+            }
         }
 
         val topRow = LinearLayout(c).apply {
@@ -202,7 +243,7 @@ class MainActivity : AppCompatActivity() {
         val progressBar = ProgressBar(c, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             progressTintList = ColorStateList.valueOf(Ui.primary(c))
-            if (st.pct < 0) {
+            if (st.detail == "Sırada" || st.pct < 0) {
                 isIndeterminate = true
             } else {
                 isIndeterminate = false
@@ -214,6 +255,176 @@ class MainActivity : AppCompatActivity() {
         card.addView(progressBar, Ui.lp(Ui.MATCH, Ui.dp(c, 3), t = Ui.dp(c, 10)))
 
         return card
+    }
+
+    private var openDetailCodeTv: TextView? = null
+    private var openDetailProgressBar: ProgressBar? = null
+
+    private fun showActiveDetailDialog(id: Long) {
+        activeDetailId = id
+        val st = DownloadService.activeDownloads[id] ?: return
+
+        val dialog = Dialog(this)
+        activeDetailDialog = dialog
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        val context = this
+        val cardBgColor = if (Ui.isDark(context)) Color.parseColor("#1C1C1E") else Color.parseColor("#F8F8FA")
+        val borderClr = if (Ui.isDark(context)) Color.parseColor("#2C2C2E") else Color.parseColor("#E5E5EA")
+
+        val rootLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(Ui.dp(context, 20), Ui.dp(context, 20), Ui.dp(context, 20), Ui.dp(context, 20))
+            background = Ui.shape(cardBgColor, Ui.dp(context, 24).toFloat(), borderClr, Ui.dp(context, 1))
+            elevation = Ui.dp(context, 16).toFloat()
+        }
+
+        // Başlık ve Durum Rozeti
+        val topRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val titleView = Ui.text(context, "İndirme Detayı", 18f, Ui.textClr(context), true)
+        topRow.addView(titleView, Ui.lp(0, Ui.WRAP, 1f))
+
+        val statusText = if (st.detail == "Sırada") "Sırada" else "İndiriliyor..."
+        val badge = Ui.pill(context, statusText, Color.WHITE, Ui.primary(context))
+        topRow.addView(badge, Ui.lp(Ui.WRAP, Ui.WRAP))
+
+        rootLayout.addView(topRow, Ui.lp(Ui.MATCH, Ui.WRAP, b = Ui.dp(context, 16)))
+
+        // Kod Kutusu
+        val codeBoxBg = if (Ui.isDark(context)) Color.parseColor("#141416") else Color.parseColor("#EBEBF0")
+        
+        fun buildDetailText(): String {
+            val currSt = DownloadService.activeDownloads[id] ?: st
+            val p = currSt.platform
+            val u = currSt.url
+            val det = currSt.detail
+            val startT = currSt.startTime
+            val startStr = if (startT > 0L) Store.formatTimestamp(startT) else "-"
+            val elapsed = if (startT > 0L) (System.currentTimeMillis() - startT) / 1000 else 0L
+            return "Platform: $p\nURL: $u\nDurum/Hız: $det\nBaşlangıç: $startStr\nGeçen Süre: $elapsed sn"
+        }
+
+        val codeTv = Ui.text(context, buildDetailText(), 12.5f, Ui.textClr(context), false).apply {
+            typeface = Typeface.MONOSPACE
+            setPadding(Ui.dp(context, 12), Ui.dp(context, 12), Ui.dp(context, 12), Ui.dp(context, 12))
+        }
+        openDetailCodeTv = codeTv
+
+        val codeScroll = ScrollView(context).apply {
+            background = Ui.shape(codeBoxBg, Ui.dp(context, 12).toFloat())
+            addView(codeTv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+        }
+        rootLayout.addView(codeScroll, Ui.lp(Ui.MATCH, Ui.dp(context, 180), b = Ui.dp(context, 12)))
+
+        // ProgressBar
+        val dialogProgressBar = ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progressTintList = ColorStateList.valueOf(Ui.primary(context))
+            if (st.detail == "Sırada" || st.pct < 0) {
+                isIndeterminate = true
+            } else {
+                isIndeterminate = false
+                progress = st.pct
+            }
+        }
+        openDetailProgressBar = dialogProgressBar
+        rootLayout.addView(dialogProgressBar, Ui.lp(Ui.MATCH, Ui.dp(context, 4), b = Ui.dp(context, 16)))
+
+        // Alt Butonlar
+        val buttonRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        val closeBtn = Button(context).apply {
+            text = "Kapat"
+            isAllCaps = false
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextColor(Ui.textClr(context))
+            typeface = Ui.font(context, bold = true)
+            stateListAnimator = null
+            minHeight = Ui.dp(context, 48)
+            minimumHeight = Ui.dp(context, 48)
+            val tonalBg = if (Ui.isDark(context)) Color.parseColor("#3A3A3C") else Color.parseColor("#E5E5EA")
+            background = Ui.ripple(Ui.shape(tonalBg, 999f), 999f)
+            setOnClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                dialog.dismiss()
+            }
+        }
+
+        val cancelBtn = Button(context).apply {
+            text = "İptal Et"
+            isAllCaps = false
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextColor(Color.WHITE)
+            typeface = Ui.font(context, bold = true)
+            stateListAnimator = null
+            minHeight = Ui.dp(context, 48)
+            minimumHeight = Ui.dp(context, 48)
+            val redBg = Color.parseColor("#FF3B30")
+            background = Ui.ripple(Ui.shape(redBg, 999f), 999f)
+            setOnClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                AlertDialog.Builder(context)
+                    .setTitle("İptal Onayı")
+                    .setMessage("İndirme iptal edilsin mi?")
+                    .setPositiveButton("Evet") { _, _ ->
+                        DownloadService.cancelDownload(id)
+                        dialog.dismiss()
+                    }
+                    .setNegativeButton("Vazgeç", null)
+                    .show()
+            }
+        }
+
+        buttonRow.addView(closeBtn, Ui.lp(0, Ui.WRAP, 1f, r = Ui.dp(context, 8)))
+        buttonRow.addView(cancelBtn, Ui.lp(0, Ui.WRAP, 1f, l = Ui.dp(context, 8)))
+        rootLayout.addView(buttonRow, Ui.lp(Ui.MATCH, Ui.WRAP))
+
+        dialog.setContentView(rootLayout)
+        dialog.setOnDismissListener {
+            activeDetailDialog = null
+            activeDetailId = -1L
+            openDetailCodeTv = null
+            openDetailProgressBar = null
+            dialogUpdateHandler.removeCallbacks(dialogUpdateRunnable)
+        }
+
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.9).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.show()
+
+        dialogUpdateHandler.removeCallbacks(dialogUpdateRunnable)
+        dialogUpdateHandler.postDelayed(dialogUpdateRunnable, 1000)
+    }
+
+    private fun updateOpenDetailDialog() {
+        if (activeDetailDialog == null || activeDetailId == -1L) return
+        val st = DownloadService.activeDownloads[activeDetailId]
+        if (st == null) {
+            activeDetailDialog?.dismiss()
+            return
+        }
+        openDetailCodeTv?.text = run {
+            val p = st.platform
+            val u = st.url
+            val det = st.detail
+            val startT = st.startTime
+            val startStr = if (startT > 0L) Store.formatTimestamp(startT) else "-"
+            val elapsed = if (startT > 0L) (System.currentTimeMillis() - startT) / 1000 else 0L
+            "Platform: $p\nURL: $u\nDurum/Hız: $det\nBaşlangıç: $startStr\nGeçen Süre: $elapsed sn"
+        }
+        openDetailProgressBar?.let { pb ->
+            if (st.detail == "Sırada" || st.pct < 0) {
+                pb.isIndeterminate = true
+            } else {
+                pb.isIndeterminate = false
+                pb.progress = st.pct
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -311,6 +522,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @Suppress("PrivateApi")
     private fun start(text: String) {
         val url = Regex("https?://\\S+").find(text)?.value
         if (url == null) {

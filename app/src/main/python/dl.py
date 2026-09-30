@@ -299,6 +299,8 @@ def _gallery(url, dest, cookies, template, sink=None):
     def monitor_gallery():
         limiter = RateLimiter(0.5)
         while not stop_event.is_set():
+            if sink and hasattr(sink, "isCancelled") and sink.isCancelled():
+                raise RuntimeError("İptal edildi")
             try:
                 total_bytes = 0
                 if os.path.exists(dest):
@@ -360,6 +362,8 @@ def _ytdlp(url, dest, cookies, sink, quality="best"):
     limiter = RateLimiter(0.5)
 
     def ytdlp_hook(d):
+        if sink and hasattr(sink, "isCancelled") and sink.isCancelled():
+            raise RuntimeError("İptal edildi")
         if d.get('status') == 'downloading':
             total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
             downloaded = d.get('downloaded_bytes', 0)
