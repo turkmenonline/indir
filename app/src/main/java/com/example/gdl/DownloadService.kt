@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaExtractor
 import android.media.MediaMetadataRetriever
 import android.os.Handler
 import android.os.IBinder
@@ -54,6 +55,7 @@ class DownloadService : Service() {
         val activeDownloads = ConcurrentHashMap<Long, DownloadState>()
         val futures = ConcurrentHashMap<Long, Future<*>>()
         val cancelledTasks = ConcurrentHashMap.newKeySet<Long>()
+        val runningTasks = ConcurrentHashMap.newKeySet<Long>()
         var onStateChanged: (() -> Unit)? = null
 
         private const val TAG = "DownloadService"
@@ -82,23 +84,26 @@ class DownloadService : Service() {
         }
 
         fun cancelDownload(id: Long) {
-            val future = futures[id]
-            if (future != null) {
-                val cancelledBeforeStart = future.cancel(false)
-                if (cancelledBeforeStart) {
-                    futures.remove(id)
-                    activeDownloads.remove(id)
-                    cancelledTasks.remove(id)
-                    onStateChanged?.invoke()
-                } else {
-                    cancelledTasks.add(id)
-                    try {
-                        if (Python.isStarted()) {
-                            Python.getInstance().getModule("dl").callAttr("cancel_task", id.toString())
-                        }
-                    } catch (_: Exception) {}
+            if (!activeDownloads.containsKey(id)) return
+            cancelledTasks.add(id)
+            if (runningTasks.contains(id)) {
+                // ÇALIŞIYOR: Python'a iptal gönder. Kart, process() bitince finally'de kalkar.
+                try {
+                    if (Python.isStarted()) {
+                        val r = Python.getInstance().getModule("dl")
+                            .callAttr("cancel_task", id.toString())
+                        Log.d(TAG, "CANCEL running id=$id -> $r")
+                    } else {
+                        Log.w(TAG, "CANCEL id=$id Python henüz başlamadı")
+                    }
+                } catch (e: Throwable) {
+                    Log.e(TAG, "CANCEL cancel_task hatası id=$id: ${e}", e)
                 }
             } else {
+                // SIRADA: hiç başlamadı. Kartı hemen kaldır; sıra gelince executor işi
+                // cancelledTasks'ı görüp anında çıkar (Future.cancel KULLANMA: çalışan
+                // işte de true döner ve indirmeyi durdurmaz, sadece kartı siler).
+                Log.d(TAG, "CANCEL queued id=$id")
                 activeDownloads.remove(id)
                 onStateChanged?.invoke()
             }
@@ -172,6 +177,7 @@ class DownloadService : Service() {
         onStateChanged?.invoke()
 
         val future = executor.submit {
+            runningTasks.add(id)
             try {
                 if (cancelledTasks.contains(id)) {
                     val dir = File(cacheDir, "dl_$id")
@@ -188,6 +194,7 @@ class DownloadService : Service() {
                 onStateChanged?.invoke()
                 process(id, url, customQuality, platform, state)
             } finally {
+                runningTasks.remove(id)
                 futures.remove(id)
                 cancelledTasks.remove(id)
                 activeDownloads.remove(id)
@@ -208,6 +215,7 @@ class DownloadService : Service() {
             activeDownloads.clear()
             futures.clear()
             cancelledTasks.clear()
+            runningTasks.clear()
             onStateChanged?.invoke()
         }
     }
@@ -268,6 +276,7 @@ class DownloadService : Service() {
                     val video = mime.startsWith("video")
                     val image = mime.startsWith("image")
                     if (video || image) {
+                        if (video) log += "\n[ses] ${f.name}: ${if (hasAudio(f)) "var" else "YOK"}"
                         if (save(f)) {
                             savedFiles.add(f)
                             if (video) savedVideos++
@@ -352,6 +361,21 @@ class DownloadService : Service() {
         }
 
         nm.notify((id % 100000).toInt() + 10, builder.build())
+    }
+
+    private fun hasAudio(f: File): Boolean {
+        val ex = MediaExtractor()
+        return try {
+            ex.setDataSource(f.absolutePath)
+            (0 until ex.trackCount).any {
+                ex.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)?.startsWith("audio") == true
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "hasAudio hatası: ${e.message}")
+            true
+        } finally {
+            ex.release()
+        }
     }
 
     private fun loadThumbnail(f: File): Bitmap? {

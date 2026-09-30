@@ -1,5 +1,7 @@
 import ctypes
+import socket
 import threading
+import weakref
 import contextlib
 import importlib
 import io
@@ -33,18 +35,85 @@ YT_FIRST = ("youtube.com", "youtu.be", "tiktok.com", "vimeo.com",
 class CancelledDownload(BaseException):
     pass
 
-active_threads = {}  # task_id -> thread_id
+
+active_threads = {}  # task_id -> worker thread id
 cancelled_ids = set()
+
+_tl = threading.local()          # worker thread'in task_id'si
+_socks = {}                      # task_id -> [weakref(socket), ...]
+_socks_lock = threading.Lock()
+_OrigSocket = socket.socket
+_orig_wrap_socket = ssl.SSLContext.wrap_socket
+
+
+def _register_sock(s):
+    tid = getattr(_tl, "task_id", None)
+    if not tid:
+        return
+    with _socks_lock:
+        lst = _socks.setdefault(tid, [])
+        if len(lst) > 64:
+            lst[:] = [r for r in lst if r() is not None]
+        lst.append(weakref.ref(s))
+
+
+class _TrackedSocket(_OrigSocket):
+    def __init__(self, *a, **kw):
+        tid = getattr(_tl, "task_id", None)
+        if tid and tid in cancelled_ids:
+            raise CancelledDownload("Iptal edildi")
+        _OrigSocket.__init__(self, *a, **kw)
+        _register_sock(self)
+
+
+def _tracked_wrap_socket(self, *a, **kw):
+    tid = getattr(_tl, "task_id", None)
+    if tid and tid in cancelled_ids:
+        raise CancelledDownload("Iptal edildi")
+    s = _orig_wrap_socket(self, *a, **kw)
+    _register_sock(s)
+    return s
+
+
+socket.socket = _TrackedSocket
+ssl.SSLContext.wrap_socket = _tracked_wrap_socket
+
+
+def _kill_sockets(tid_str):
+    """Bloklu recv() anında hata versin diye task'in soketlerini kapatır."""
+    n = 0
+    with _socks_lock:
+        refs = list(_socks.get(tid_str, []))
+    for r in refs:
+        s = r()
+        if s is None:
+            continue
+        try:
+            if s.fileno() != -1:
+                _OrigSocket.shutdown(s, socket.SHUT_RDWR)
+                n += 1
+        except Exception:
+            pass
+    return n
+
+
+def _async_raise(tid):
+    n = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+        ctypes.c_ulong(tid), ctypes.py_object(CancelledDownload))
+    if n > 1:
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(tid), None)
+    return n
+
 
 def cancel_task(task_id):
     tid_str = str(task_id)
     cancelled_ids.add(tid_str)
+    killed = _kill_sockets(tid_str)
     tid = active_threads.get(tid_str)
-    if tid:
-        ctypes.pythonapi.PyThreadState_SetAsyncExc(
-            ctypes.c_ulong(tid),
-            ctypes.py_object(CancelledDownload)
-        )
+    raised = _async_raise(tid) if tid else -1
+    msg = "cancel_task id=%s sockets=%d async_exc=%s" % (tid_str, killed, raised)
+    print(msg)
+    return msg
 
 
 class RateLimiter:
@@ -297,6 +366,9 @@ def _gallery(task_id, url, dest, cookies, template, sink=None):
         config.load()
         config.set(('extractor',), 'timeout', 5)
         config.set(('downloader',), 'timeout', 5)
+        # ffmpeg yok: ses+video ayri inip birlesmiyor -> sesli tek dosya iste
+        config.set(('downloader', 'ytdl'), 'format', 'b[acodec!=none][vcodec!=none]/b')
+        config.set(('extractor', 'instagram'), 'videos', True)
     except Exception:
         pass
     for name in ("", "gallery-dl", "gallery_dl"):
@@ -321,7 +393,7 @@ def _gallery(task_id, url, dest, cookies, template, sink=None):
         limiter = RateLimiter(0.5)
         while not stop_event.is_set():
             if tid_str in cancelled_ids or (sink and hasattr(sink, "isCancelled") and sink.isCancelled()):
-                raise CancelledDownload("İptal edildi")
+                return  # not: bu ayrı thread; burada raise etmek indirmeyi durdurmaz
             try:
                 total_bytes = 0
                 if os.path.exists(dest):
@@ -440,32 +512,75 @@ def _ytdlp(task_id, url, dest, cookies, sink, quality="best"):
     return "\n".join(log.lines) or "tamam"
 
 
+def _run_tools(task_id, url, out_dir, cookies, template, sink, quality):
+    tid_str = str(task_id)
+    _tl.task_id = tid_str
+    if any(d in url for d in YT_FIRST):
+        order = ["ytdlp", "gallery"]
+    else:
+        order = ["gallery", "ytdlp"]
+    parts = []
+    for tool in order:
+        if tid_str in cancelled_ids:
+            raise CancelledDownload("İptal edildi")
+        try:
+            if tool == "gallery":
+                out = _gallery(task_id, url, out_dir, cookies, template, sink)
+            else:
+                out = _ytdlp(task_id, url, out_dir, cookies, sink, quality)
+        except Exception as e:
+            out = "%s: %s" % (type(e).__name__, e)
+        parts.append("[%s]\n%s" % (tool, out.strip()))
+        if _has_files(out_dir):
+            break
+    return "\n\n".join(parts)
+
+
+def _hard_stop(tid_str, w):
+    for _ in range(16):  # en fazla ~4 sn
+        _kill_sockets(tid_str)
+        if w.ident:
+            _async_raise(w.ident)
+        w.join(0.25)
+        if not w.is_alive():
+            return True
+    print("UYARI: iptal edilen worker thread hala calisiyor id=%s" % tid_str)
+    return False
+
+
+CANCEL_RESULT = "[iptal]\nKullanıcı tarafından iptal edildi"
+
+
 def run(task_id, url, out_dir, cookies, template, sink, updates_dir=None, quality="best"):
     tid_str = str(task_id)
-    active_threads[tid_str] = threading.get_ident()
-    try:
-        if updates_dir:
-            setup_updates_path(updates_dir)
+    if updates_dir:
+        setup_updates_path(updates_dir)
+    result = {}
 
-        if any(d in url for d in YT_FIRST):
-            order = ["ytdlp", "gallery"]
-        else:
-            order = ["gallery", "ytdlp"]
-        parts = []
-        for tool in order:
+    def work():
+        try:
+            result["out"] = _run_tools(task_id, url, out_dir, cookies, template, sink, quality)
+        except BaseException as e:
+            result["err"] = e
+
+    w = threading.Thread(target=work, name="dl-" + tid_str, daemon=True)
+    w.start()
+    active_threads[tid_str] = w.ident
+    try:
+        while w.is_alive():
+            w.join(0.25)
             if tid_str in cancelled_ids:
-                raise CancelledDownload("İptal edildi")
-            try:
-                if tool == "gallery":
-                    out = _gallery(task_id, url, out_dir, cookies, template, sink)
-                else:
-                    out = _ytdlp(task_id, url, out_dir, cookies, sink, quality)
-            except Exception as e:
-                out = "%s: %s" % (type(e).__name__, e)
-            parts.append("[%s]\n%s" % (tool, out.strip()))
-            if _has_files(out_dir):
-                break
-        return "\n\n".join(parts)
+                _hard_stop(tid_str, w)
+                return CANCEL_RESULT
+        if tid_str in cancelled_ids:
+            return CANCEL_RESULT
+        err = result.get("err")
+        if err is not None and not isinstance(err, CancelledDownload):
+            raise err
+        return result.get("out", "")
     finally:
         active_threads.pop(tid_str, None)
-        cancelled_ids.discard(tid_str)
+        if not w.is_alive():
+            cancelled_ids.discard(tid_str)
+            with _socks_lock:
+                _socks.pop(tid_str, None)
