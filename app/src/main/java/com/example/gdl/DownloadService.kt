@@ -17,26 +17,33 @@ import android.provider.MediaStore
 import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.app.NotificationCompat
-import androidx.core.net.toUri
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
-class ProgressSink(private val f: (Int) -> Unit) {
+class ProgressSink(private val f: (Int, String) -> Unit) {
     @Suppress("unused")
-    fun update(p: Int) {
-        f(p)
-    }
+    fun updateProgress(p: Int, detail: String) { f(p, detail) }
 }
 
 class DownloadService : Service() {
+    data class DownloadState(val id: Long, val platform: String, val url: String, var pct: Int, var detail: String)
+
     companion object {
         const val EXTRA_URL = "url"
         const val CH_PROGRESS = "progress"
         const val CH_RESULT = "result"
-        var onChange: (() -> Unit)? = null
+
+        const val STATUS_QUEUED = "Sırada"
+        const val STATUS_DOWNLOADING = "İndiriliyor"
+        const val STATUS_INTERRUPTED = "Yarıda kaldı"
+
+        val activeDownloads = ConcurrentHashMap<Long, DownloadState>()
+        var onStateChanged: (() -> Unit)? = null
+
         private const val TAG = "DownloadService"
     }
 
@@ -59,13 +66,13 @@ class DownloadService : Service() {
 
     private fun getPlatformName(url: String): String = Store.getPlatformName(url)
 
-    private fun progressNotif(platform: String, text: String, pct: Int?): Notification {
+    private fun progressNotif(platform: String, text: String, pct: Int): Notification {
         val b = NotificationCompat.Builder(this, CH_PROGRESS)
             .setSmallIcon(R.drawable.stat_sys_download)
             .setContentTitle("İndiriliyor...")
             .setContentText(if (text.isNotEmpty()) "$platform • $text" else platform)
             .setOngoing(true)
-        if (pct != null) b.setProgress(100, pct, false) else b.setProgress(0, 0, true)
+        if (pct >= 0) b.setProgress(100, pct, false) else b.setProgress(0, 0, true)
         return b.build()
     }
 
@@ -82,7 +89,7 @@ class DownloadService : Service() {
         val platform = url?.let { getPlatformName(it) } ?: "İndiriliyor"
         startForeground(
             1,
-            progressNotif(platform, "Hazırlanıyor…", null),
+            progressNotif(platform, "Hazırlanıyor…", -1),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         )
         if (url == null) {
@@ -91,32 +98,43 @@ class DownloadService : Service() {
         }
         pending.incrementAndGet()
         val id = System.currentTimeMillis()
-        Store.upsert(this, id, url, "Sırada", "")
-        onChange?.invoke()
+        val state = DownloadState(id, platform, url, -1, "Hazırlanıyor...")
+        activeDownloads[id] = state
+        onStateChanged?.invoke()
+
         executor.execute {
             try {
-                process(id, url, customQuality)
+                process(id, url, customQuality, platform)
             } finally {
+                activeDownloads.remove(id)
+                onStateChanged?.invoke()
                 if (pending.decrementAndGet() == 0) stopIfIdle()
             }
         }
         return START_NOT_STICKY
     }
 
-    private fun process(id: Long, url: String, customQuality: String) {
-        val platform = getPlatformName(url)
-        Store.upsert(this, id, url, "İndiriliyor", "")
-        onChange?.invoke()
-        nm.notify(1, progressNotif(platform, "İndiriliyor...", null))
+    override fun onDestroy() {
+        super.onDestroy()
+        if (activeDownloads.isNotEmpty()) {
+            activeDownloads.values.forEach { st ->
+                Store.upsert(this, st.id, st.url, STATUS_INTERRUPTED, "")
+            }
+            activeDownloads.clear()
+            onStateChanged?.invoke()
+        }
+    }
 
+    private fun process(id: Long, url: String, customQuality: String, platform: String) {
         val dir = File(cacheDir, "dl_$id").apply { mkdirs() }
         val cookieTmp = File(cacheDir, "cookies_job.txt")
-        var log: String
+        var log = ""
         var saved = 0
         var savedImages = 0
         var savedVideos = 0
         val savedFiles = mutableListOf<File>()
         var thumbnailBitmap: Bitmap? = null
+        var success = false
 
         try {
             if (!Python.isStarted()) Python.start(AndroidPlatform(this))
@@ -126,8 +144,13 @@ class DownloadService : Service() {
                 cookies.copyTo(cookieTmp, overwrite = true)
                 cookiePath = cookieTmp.absolutePath
             }
-            val sink = ProgressSink { p ->
-                nm.notify(1, progressNotif(platform, "$p%", p))
+            val sink = ProgressSink { p, detail ->
+                activeDownloads[id]?.let { st ->
+                    st.pct = p
+                    st.detail = detail
+                }
+                onStateChanged?.invoke()
+                nm.notify(1, progressNotif(platform, detail, p))
             }
             val updatesDir = File(filesDir, "python_updates")
             val updatesPath = if (updatesDir.exists()) updatesDir.absolutePath else ""
@@ -153,6 +176,7 @@ class DownloadService : Service() {
             }
             saved = savedFiles.size
             if (saved > 0) {
+                success = true
                 val thumbFile = savedFiles.first()
                 Log.d(TAG, "Loading thumbnail from file: ${thumbFile.absolutePath}, exists=${thumbFile.exists()}, length=${thumbFile.length()}")
                 thumbnailBitmap = loadThumbnail(thumbFile)
@@ -165,11 +189,15 @@ class DownloadService : Service() {
             cookieTmp.delete()
         }
 
-        val ok = saved > 0
-        val status = if (ok) "✓ $saved dosya kaydedildi" else "✗ İndirilemedi"
-        Store.upsert(this, id, url, status, log.takeLast(3000))
-        onChange?.invoke()
+        if (success) {
+            val status = if (saved == 1) "1 dosya" else "$saved dosya"
+            Store.upsert(this, id, url, status, log.takeLast(3000))
+        } else {
+            Store.upsert(this, id, url, STATUS_INTERRUPTED, log.takeLast(3000))
+        }
+        onStateChanged?.invoke()
 
+        val ok = success
         val detailText = when {
             (savedImages > 0) && (savedVideos == 0) -> if (savedImages == 1) "1 fotoğraf galeriye kaydedildi" else "$savedImages fotoğraf galeriye kaydedildi"
             (savedImages == 0) && (savedVideos > 0) -> if (savedVideos == 1) "1 video galeriye kaydedildi" else "$savedVideos video galeriye kaydedildi"

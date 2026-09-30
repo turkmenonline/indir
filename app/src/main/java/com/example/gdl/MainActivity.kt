@@ -4,33 +4,31 @@ import android.Manifest
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
-import android.util.TypedValue
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
-import java.io.File
 
 class MainActivity : AppCompatActivity() {
     private lateinit var input: EditText
     private lateinit var goButton: Button
     private lateinit var mainContent: LinearLayout
+    private lateinit var activeDownloadsContainer: LinearLayout
     private val currentIndex = 0
     private var selectedQuality = Store.QUALITY_BEST
-
-    private fun helper(t: String): TextView = Ui.text(this, t, 12f, Ui.mutedClr(this))
 
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
@@ -96,6 +94,11 @@ class MainActivity : AppCompatActivity() {
             addView(buttons, Ui.lp(Ui.MATCH, Ui.WRAP))
         }
 
+        activeDownloadsContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+
         mainContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.bg(this@MainActivity))
@@ -103,6 +106,7 @@ class MainActivity : AppCompatActivity() {
             clipToPadding = false
             addView(header, Ui.lp(Ui.MATCH, Ui.WRAP))
             addView(inputCard, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(16)))
+            addView(activeDownloadsContainer, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(16)))
         }
         val scroll = ScrollView(this).apply {
             isFillViewport = false
@@ -138,6 +142,78 @@ class MainActivity : AppCompatActivity() {
         Ui.setupEdgeToEdge(this, root)
         handleIntent(intent)
         handlePageAnimation(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        DownloadService.onStateChanged = { runOnUiThread { updateActiveBox() } }
+        updateActiveBox()
+    }
+
+    override fun onStop() {
+        DownloadService.onStateChanged = null
+        super.onStop()
+    }
+
+    private fun updateActiveBox() {
+        activeDownloadsContainer.removeAllViews()
+        val downloads = DownloadService.activeDownloads.values.toList()
+        if (downloads.isEmpty()) {
+            activeDownloadsContainer.visibility = View.GONE
+        } else {
+            activeDownloadsContainer.visibility = View.VISIBLE
+            downloads.forEach { st ->
+                val card = createActiveDownloadRow(st)
+                activeDownloadsContainer.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    setMargins(0, 0, 0, Ui.dp(this@MainActivity, 10))
+                })
+            }
+        }
+    }
+
+    private fun createActiveDownloadRow(st: DownloadService.DownloadState): View {
+        val c = this
+        val d = Ui.dp(c, 14)
+        val card = LinearLayout(c).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(d, d, d, d)
+            val r = Ui.dp(c, 16).toFloat()
+            background = Ui.shape(Ui.cardBg(c), r, Ui.line(c), Ui.dp(c, 1))
+        }
+
+        val topRow = LinearLayout(c).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val platformTv = Ui.text(c, st.platform, 15f, Ui.textClr(c), true).apply {
+            isSingleLine = true
+            ellipsize = TextUtils.TruncateAt.END
+        }
+
+        val detailTv = Ui.text(c, st.detail, 13f, Ui.mutedClr(c)).apply {
+            gravity = Gravity.END
+            isSingleLine = true
+        }
+
+        topRow.addView(platformTv, Ui.lp(0, Ui.WRAP, 1f))
+        topRow.addView(detailTv, Ui.lp(Ui.WRAP, Ui.WRAP, l = Ui.dp(c, 8)))
+
+        val progressBar = ProgressBar(c, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progressTintList = ColorStateList.valueOf(Ui.primary(c))
+            if (st.pct < 0) {
+                isIndeterminate = true
+            } else {
+                isIndeterminate = false
+                progress = st.pct
+            }
+        }
+
+        card.addView(topRow, Ui.lp(Ui.MATCH, Ui.WRAP))
+        card.addView(progressBar, Ui.lp(Ui.MATCH, Ui.dp(c, 3), t = Ui.dp(c, 10)))
+
+        return card
     }
 
     override fun onNewIntent(intent: Intent?) {

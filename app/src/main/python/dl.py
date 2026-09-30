@@ -8,6 +8,8 @@ import shutil
 import ssl
 import sys
 import tarfile
+import threading
+import time
 import urllib.request
 import zipfile
 
@@ -25,6 +27,19 @@ except Exception:
 
 YT_FIRST = ("youtube.com", "youtu.be", "tiktok.com", "vimeo.com",
             "facebook.com", "fb.watch", "twitch.tv", "dailymotion.com")
+
+
+class RateLimiter:
+    def __init__(self, interval=0.5):
+        self.interval = interval
+        self.last_time = 0
+
+    def check(self):
+        now = time.time()
+        if now - self.last_time >= self.interval:
+            self.last_time = now
+            return True
+        return False
 
 
 def _unload_module(mod_name):
@@ -125,10 +140,8 @@ def _download_and_extract_pkg(url, updates_dir, pkg_folder):
 
     try:
         _download_file(url, temp_file)
-
         target_pkg_dir = os.path.join(updates_dir, pkg_folder)
 
-        # 1. Her işlemden önce hedef motor klasörünü shutil.rmtree ile tamamen sil
         if os.path.exists(target_pkg_dir):
             shutil.rmtree(target_pkg_dir, ignore_errors=True)
 
@@ -187,7 +200,6 @@ def update_yt_dlp(updates_dir, channel="Stable"):
     os.makedirs(updates_dir, exist_ok=True)
     target_pkg_dir = os.path.join(updates_dir, "yt_dlp")
 
-    # Clean Install: Eski klasör varsa tamamen sil
     if os.path.exists(target_pkg_dir):
         shutil.rmtree(target_pkg_dir, ignore_errors=True)
     _unload_module("yt_dlp")
@@ -211,7 +223,6 @@ def update_yt_dlp(updates_dir, channel="Stable"):
             raise RuntimeError("yt-dlp sürümü doğrulanamadı")
         return v
     except Exception as e:
-        # Fallback: Herhangi bir hata durumunda bozuk klasörü sil ve APK kararlı sürümüne dön
         if os.path.exists(target_pkg_dir):
             shutil.rmtree(target_pkg_dir, ignore_errors=True)
         _unload_module("yt_dlp")
@@ -222,7 +233,6 @@ def update_gallery_dl(updates_dir):
     os.makedirs(updates_dir, exist_ok=True)
     target_pkg_dir = os.path.join(updates_dir, "gallery_dl")
 
-    # Clean Install: Eski klasör varsa tamamen sil
     if os.path.exists(target_pkg_dir):
         shutil.rmtree(target_pkg_dir, ignore_errors=True)
     _unload_module("gallery_dl")
@@ -242,7 +252,6 @@ def update_gallery_dl(updates_dir):
             raise RuntimeError("gallery-dl sürümü doğrulanamadı")
         return v
     except Exception as e:
-        # Fallback: Herhangi bir hata durumunda bozuk klasörü sil ve APK kararlı sürümüne dön
         if os.path.exists(target_pkg_dir):
             shutil.rmtree(target_pkg_dir, ignore_errors=True)
         _unload_module("gallery_dl")
@@ -262,7 +271,7 @@ def _has_files(dest):
     return False
 
 
-def _gallery(url, dest, cookies, template):
+def _gallery(url, dest, cookies, template, sink=None):
     import gallery_dl
     from gallery_dl import config
     try:
@@ -284,6 +293,33 @@ def _gallery(url, dest, cookies, template):
     old = sys.argv
     sys.argv = args
     code = 0
+
+    stop_event = threading.Event()
+
+    def monitor_gallery():
+        limiter = RateLimiter(0.5)
+        while not stop_event.is_set():
+            try:
+                total_bytes = 0
+                if os.path.exists(dest):
+                    for root, dirs, files in os.walk(dest):
+                        for f in files:
+                            try:
+                                total_bytes += os.path.getsize(os.path.join(root, f))
+                            except Exception:
+                                pass
+                if total_bytes > 0 and sink and limiter.check():
+                    mb = total_bytes / (1024 * 1024)
+                    detail = f"{mb:.1f} MB indirildi"
+                    sink.updateProgress(-1, detail)
+            except Exception:
+                pass
+            time.sleep(0.5)
+
+    t = threading.Thread(target=monitor_gallery, daemon=True)
+    if sink:
+        t.start()
+
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
             code = gallery_dl.main() or 0
@@ -293,6 +329,7 @@ def _gallery(url, dest, cookies, template):
         buf.write("\n[Hata]: %s: %s\n" % (type(e).__name__, e))
         code = 1
     finally:
+        stop_event.set()
         sys.argv = old
     return buf.getvalue() + "(çıkış kodu: %s)" % code
 
@@ -320,18 +357,37 @@ class _Log:
 
 def _ytdlp(url, dest, cookies, sink, quality="best"):
     import yt_dlp
-    last = [-1]
+    limiter = RateLimiter(0.5)
 
-    def hook(d):
-        if d.get("status") != "downloading":
-            return
-        total = d.get("total_bytes") or d.get("total_bytes_estimate")
-        if not total:
-            return
-        pct = int(d.get("downloaded_bytes", 0) * 100 / total)
-        if pct != last[0]:
-            last[0] = pct
-            sink.update(pct)
+    def ytdlp_hook(d):
+        if d.get('status') == 'downloading':
+            total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+            downloaded = d.get('downloaded_bytes', 0)
+            if total > 0:
+                pct = int(downloaded * 100 / total)
+            else:
+                frag_idx = d.get('fragment_index')
+                frag_count = d.get('fragment_count')
+                if frag_idx is not None and frag_count and frag_count > 0:
+                    pct = int(frag_idx * 100 / frag_count)
+                else:
+                    pct = -1
+
+            speed = d.get('speed') or 0
+            eta = d.get('eta') or 0
+
+            speed_str = f"{speed / (1024 * 1024):.1f} MB/s" if speed > 0 else ""
+            eta_str = f"{eta} sn" if eta > 0 else ""
+
+            if pct >= 0:
+                detail = f"%{pct} • {speed_str} ({eta_str})".replace(" ()", "").strip()
+            else:
+                detail = f"{speed_str} ({eta_str})".replace(" ()", "").strip()
+                if not detail:
+                    detail = "İndiriliyor..."
+
+            if sink and limiter.check():
+                sink.updateProgress(pct, detail)
 
     log = _Log()
     if quality == "720p":
@@ -348,7 +404,7 @@ def _ytdlp(url, dest, cookies, sink, quality="best"):
         "quiet": True,
         "no_warnings": True,
         "logger": log,
-        "progress_hooks": [hook],
+        "progress_hooks": [ytdlp_hook],
     }
     if cookies:
         ydl_opts["cookiefile"] = cookies
@@ -369,7 +425,7 @@ def run(url, dest, cookies, template, sink, updates_dir=None, quality="best"):
     for tool in order:
         try:
             if tool == "gallery":
-                out = _gallery(url, dest, cookies, template)
+                out = _gallery(url, dest, cookies, template, sink)
             else:
                 out = _ytdlp(url, dest, cookies, sink, quality)
         except Exception as e:

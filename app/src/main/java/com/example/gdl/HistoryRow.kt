@@ -1,5 +1,6 @@
 package com.example.gdl
 
+import android.R
 import android.content.Context
 import android.content.res.ColorStateList
 import android.net.Uri
@@ -25,46 +26,59 @@ class HistoryRow(c: Context) : LinearLayout(c) {
     private val sub = Ui.text(c, "", 13f, Ui.mutedClr(c))
     private val chipHolder = FrameLayout(c)
     private var chip: TextView? = null
+    private val progressBar = ProgressBar(c, null, R.attr.progressBarStyleHorizontal).apply {
+        max = 100
+        isIndeterminate = false
+        progressTintList = ColorStateList.valueOf(Ui.primary(c))
+        visibility = GONE
+    }
 
     init {
-        orientation = HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
+        orientation = VERTICAL
         val p = Ui.dp(c, 14)
         setPadding(p, p, p, p)
         val r = Ui.dp(c, 16).toFloat()
         background = Ui.ripple(Ui.shape(Ui.cardBg(c), r, Ui.line(c), Ui.dp(c, 1)), r)
 
-        val bs = Ui.dp(c, 40)
-        val isz = Ui.dp(c, 24)
-        badge.addView(iconView, FrameLayout.LayoutParams(isz, isz, Gravity.CENTER))
-        sym.gravity = Gravity.CENTER
-        badge.addView(sym, FrameLayout.LayoutParams(bs, bs))
-        val ps = Ui.dp(c, 22)
-        spin.isIndeterminate = true
-        spin.indeterminateTintList = ColorStateList.valueOf(Ui.primary(c))
-        badge.addView(spin, FrameLayout.LayoutParams(ps, ps, Gravity.CENTER))
-        addView(badge, Ui.lp(bs, bs))
-
-        platformTitle.isSingleLine = true
-        platformTitle.ellipsize = TextUtils.TruncateAt.END
-        dateText.isSingleLine = true
-
-        val topRow = LinearLayout(c).apply {
+        val contentRow = LinearLayout(c).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(platformTitle, Ui.lp(0, Ui.WRAP, 1f))
-            addView(dateText, Ui.lp(Ui.WRAP, Ui.WRAP, l = Ui.dp(c, 8)))
+
+            val bs = Ui.dp(c, 40)
+            val isz = Ui.dp(c, 24)
+            badge.addView(iconView, FrameLayout.LayoutParams(isz, isz, Gravity.CENTER))
+            sym.gravity = Gravity.CENTER
+            badge.addView(sym, FrameLayout.LayoutParams(bs, bs))
+            val ps = Ui.dp(c, 22)
+            spin.isIndeterminate = true
+            spin.indeterminateTintList = ColorStateList.valueOf(Ui.primary(c))
+            badge.addView(spin, FrameLayout.LayoutParams(ps, ps, Gravity.CENTER))
+            addView(badge, Ui.lp(bs, bs))
+
+            platformTitle.isSingleLine = true
+            platformTitle.ellipsize = TextUtils.TruncateAt.END
+            dateText.isSingleLine = true
+
+            val topRow = LinearLayout(c).apply {
+                orientation = HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(platformTitle, Ui.lp(0, Ui.WRAP, 1f))
+                addView(dateText, Ui.lp(Ui.WRAP, Ui.WRAP, l = Ui.dp(c, 8)))
+            }
+
+            sub.isSingleLine = true
+            sub.ellipsize = TextUtils.TruncateAt.MIDDLE
+            val col = LinearLayout(c).apply {
+                orientation = VERTICAL
+                addView(topRow)
+                addView(sub, Ui.lp(Ui.WRAP, Ui.WRAP, t = Ui.dp(c, 2)))
+            }
+            addView(col, Ui.lp(0, Ui.WRAP, 1f, l = Ui.dp(c, 12), r = Ui.dp(c, 8)))
+            addView(chipHolder, Ui.lp(Ui.WRAP, Ui.WRAP))
         }
 
-        sub.isSingleLine = true
-        sub.ellipsize = TextUtils.TruncateAt.MIDDLE
-        val col = LinearLayout(c).apply {
-            orientation = VERTICAL
-            addView(topRow)
-            addView(sub, Ui.lp(Ui.WRAP, Ui.WRAP, t = Ui.dp(c, 2)))
-        }
-        addView(col, Ui.lp(0, Ui.WRAP, 1f, l = Ui.dp(c, 12), r = Ui.dp(c, 8)))
-        addView(chipHolder, Ui.lp(Ui.WRAP, Ui.WRAP))
+        addView(contentRow, Ui.lp(Ui.MATCH, Ui.WRAP))
+        addView(progressBar, Ui.lp(Ui.MATCH, Ui.dp(c, 3), t = Ui.dp(c, 10)))
     }
 
     fun bind(h: JSONObject) {
@@ -88,36 +102,33 @@ class HistoryRow(c: Context) : LinearLayout(c) {
         sub.setTextColor(Ui.mutedClr(c))
 
         val kind = when {
-            status.startsWith("✓") -> 1
-            status.startsWith("✗") -> 2
-            else -> 0
+            status.startsWith("✓") || status.endsWith("dosya") -> 1
+            status.startsWith("✗") || status.contains("Yarıda kaldı") -> 2
+            else -> 1
         }
-        val fg = when (kind) { 1 -> Ui.OK; 2 -> Ui.ERR; else -> Ui.primary(c) }
+        val fg = when (kind) { 1 -> Ui.OK; 2 -> Ui.ERR; else -> Ui.OK }
         val bg = when (kind) { 1 -> Ui.primaryBg(c); 2 -> Ui.ERR_BG; else -> Ui.primaryBg(c) }
 
         badge.background = Ui.shape(bg, Ui.dp(c, 20).toFloat())
 
-        if (kind == 0) {
-            spin.visibility = VISIBLE
-            iconView.visibility = GONE
-            sym.visibility = GONE
-        } else if (kind == 2) {
+        if (kind == 2) {
             spin.visibility = GONE
             iconView.visibility = GONE
             sym.visibility = VISIBLE
             sym.text = "✕"
             sym.setTextColor(Ui.ERR)
         } else {
-            // kind == 1 (success)
             spin.visibility = GONE
             sym.visibility = GONE
             iconView.visibility = VISIBLE
             iconView.setImageResource(iconRes)
         }
 
+        progressBar.visibility = GONE
+
         val label = when (kind) {
-            1 -> Regex("\\d+").find(status)?.value?.let { "$it dosya" } ?: "Tamam"
-            2 -> "Başarısız"
+            1 -> Regex("\\d+").find(status)?.value?.let { "$it dosya" } ?: if (status.contains("dosya")) status else "Tamam"
+            2 -> "Yarıda kaldı"
             else -> status
         }
         chipHolder.removeAllViews()

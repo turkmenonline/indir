@@ -198,18 +198,21 @@ class HistoryActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        DownloadService.onChange = { runOnUiThread { refresh() } }
+        DownloadService.onStateChanged = { runOnUiThread { refresh() } }
         refresh()
     }
 
     override fun onStop() {
-        DownloadService.onChange = null
+        DownloadService.onStateChanged = null
         super.onStop()
     }
 
     private fun refresh() {
         fun d(v: Int) = Ui.dp(this, v)
-        hist = Store.history(this)
+        hist = Store.history(this).filter { item ->
+            val s = item.optString("status", "")
+            s != DownloadService.STATUS_QUEUED && s != DownloadService.STATUS_DOWNLOADING
+        }
         historyListLayout.removeAllViews()
 
         if (hist.isEmpty()) {
@@ -274,9 +277,9 @@ class HistoryActivity : AppCompatActivity() {
         topRow.addView(titleView, Ui.lp(0, Ui.WRAP, 1f))
 
         val status = h.optString("status", "")
-        val isSuccess = status.contains("başarılı") || status.contains("kaydedildi") || status.startsWith("✓")
+        val isSuccess = Regex("""^(✓ )?\d+ dosya( kaydedildi)?$""").matches(status.trim())
         val badge = if (isSuccess) {
-            Ui.pill(context, "✓ Başarılı", Color.WHITE, Color.parseColor("#34C759"))
+            Ui.pill(context, "✓ İndirildi", Color.WHITE, Color.parseColor("#34C759"))
         } else {
             Ui.pill(context, "✗ İndirilemedi", Color.WHITE, Color.parseColor("#FF3B30"))
         }
@@ -298,7 +301,7 @@ class HistoryActivity : AppCompatActivity() {
         val codeScrollParams = Ui.lp(Ui.MATCH, Ui.dp(context, 260), b = Ui.dp(context, 16))
         rootLayout.addView(codeScroll, codeScrollParams)
 
-        // Alt Butonlar (Yan yana iki adet tam oval radius 999f buton)
+        // Alt Butonlar (Yan yana iki adet tam oval radius 999f buton veya başarılı ise tek Kapat butonu)
         val buttonRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
         }
@@ -320,26 +323,30 @@ class HistoryActivity : AppCompatActivity() {
             }
         }
 
-        val retryBtn = Button(context).apply {
-            text = "Tekrar Dene"
-            isAllCaps = false
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setTextColor(Color.WHITE)
-            typeface = Ui.font(context, bold = true)
-            stateListAnimator = null
-            minHeight = Ui.dp(context, 48)
-            minimumHeight = Ui.dp(context, 48)
-            val blueBg = Ui.primary(context)
-            background = Ui.ripple(Ui.shape(blueBg, 999f), 999f)
-            setOnClickListener {
-                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                start(url)
-                dialog.dismiss()
+        if (isSuccess) {
+            buttonRow.addView(cancelBtn, Ui.lp(Ui.MATCH, Ui.WRAP))
+        } else {
+            val retryBtn = Button(context).apply {
+                text = "Tekrar Dene"
+                isAllCaps = false
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                setTextColor(Color.WHITE)
+                typeface = Ui.font(context, bold = true)
+                stateListAnimator = null
+                minHeight = Ui.dp(context, 48)
+                minimumHeight = Ui.dp(context, 48)
+                val blueBg = Ui.primary(context)
+                background = Ui.ripple(Ui.shape(blueBg, 999f), 999f)
+                setOnClickListener {
+                    it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    start(url)
+                    dialog.dismiss()
+                }
             }
-        }
 
-        buttonRow.addView(cancelBtn, Ui.lp(0, Ui.WRAP, 1f, r = Ui.dp(context, 8)))
-        buttonRow.addView(retryBtn, Ui.lp(0, Ui.WRAP, 1f, l = Ui.dp(context, 8)))
+            buttonRow.addView(cancelBtn, Ui.lp(0, Ui.WRAP, 1f, r = Ui.dp(context, 8)))
+            buttonRow.addView(retryBtn, Ui.lp(0, Ui.WRAP, 1f, l = Ui.dp(context, 8)))
+        }
 
         rootLayout.addView(buttonRow, Ui.lp(Ui.MATCH, Ui.WRAP))
 
