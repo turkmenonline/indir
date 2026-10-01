@@ -130,13 +130,13 @@ object Ui {
         RippleDrawable(ColorStateList.valueOf(RIPPLE), base, shape(Color.WHITE, radius))
 
     fun font(c: Context?, bold: Boolean = false): Typeface {
-        val style = if (bold) Typeface.BOLD else Typeface.NORMAL
-        if (c == null) return Typeface.create(Typeface.DEFAULT, style)
+        if (c == null) return Typeface.DEFAULT
+        val fontRes = if (bold) R.font.sf_pro_semibold else R.font.sf_pro_regular
         return try {
-            val tf = ResourcesCompat.getFont(c, R.font.inter)
-            if (tf != null) Typeface.create(tf, style) else Typeface.create(Typeface.DEFAULT, style)
+            val tf = ResourcesCompat.getFont(c, fontRes)
+            tf ?: (if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT)
         } catch (_: Throwable) {
-            Typeface.create(Typeface.DEFAULT, style)
+            if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
         }
     }
 
@@ -146,6 +146,12 @@ object Ui {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
             setTextColor(color)
             typeface = font(c, bold)
+            if (bold && sp >= 18f) {
+                letterSpacing = -0.02f
+            }
+            if (s.any { it.isDigit() }) {
+                fontFeatureSettings = "tnum"
+            }
         }
 
     fun childText(c: Context, s: String, sp: Float = 15f, color: Int? = null, bold: Boolean = false): TextView =
@@ -276,6 +282,7 @@ object Ui {
             gravity = Gravity.CENTER
             setPadding(dp(c, 10), dp(c, 4), dp(c, 10), dp(c, 4))
             background = shape(bg, dp(c, 50).toFloat())
+            fontFeatureSettings = "tnum"
         }
 
     fun iconButton(c: Context, res: Int, desc: String, onClick: () -> Unit): ImageButton =

@@ -18,7 +18,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-val InterFontFamily = FontFamily(Font(R.font.inter))
+val SfProFontFamily = FontFamily(
+    Font(R.font.sf_pro_regular, FontWeight.Normal),
+    Font(R.font.sf_pro_semibold, FontWeight.SemiBold)
+)
 
 @Preview(showBackground = true, widthDp = 380, heightDp = 700)
 @Composable
@@ -34,9 +37,9 @@ fun MainScreenPreview() {
     val okFg = Color(0xFF15803D)
 
     val typography = Typography(
-        bodyLarge = TextStyle(fontFamily = InterFontFamily),
-        bodyMedium = TextStyle(fontFamily = InterFontFamily),
-        titleLarge = TextStyle(fontFamily = InterFontFamily, fontWeight = FontWeight.Bold)
+        bodyLarge = TextStyle(fontFamily = SfProFontFamily),
+        bodyMedium = TextStyle(fontFamily = SfProFontFamily),
+        titleLarge = TextStyle(fontFamily = SfProFontFamily, fontWeight = FontWeight.Bold)
     )
 
     MaterialTheme(typography = typography) {
@@ -61,7 +64,7 @@ fun MainScreenPreview() {
                     Text(
                         text = "İNDİR",
                         fontSize = 20.sp,
-                        fontFamily = InterFontFamily,
+                        fontFamily = SfProFontFamily,
                         fontWeight = FontWeight.Bold,
                         color = textColor
                     )
@@ -81,7 +84,7 @@ fun MainScreenPreview() {
                         OutlinedTextField(
                             value = "",
                             onValueChange = {},
-                            placeholder = { Text("Gönderi linkini yapıştırın", fontFamily = InterFontFamily, color = Color(0xFF9A9AAA)) },
+                            placeholder = { Text("Gönderi linkini yapıştırın", fontFamily = SfProFontFamily, color = Color(0xFF9A9AAA)) },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -107,7 +110,7 @@ fun MainScreenPreview() {
                                     contentColor = primary
                                 )
                             ) {
-                                Text("Yapıştır", fontFamily = InterFontFamily, fontWeight = FontWeight.Medium)
+                                Text("Yapıştır", fontFamily = SfProFontFamily, fontWeight = FontWeight.Medium)
                             }
 
                             Button(
@@ -121,7 +124,7 @@ fun MainScreenPreview() {
                                     contentColor = Color.White
                                 )
                             ) {
-                                Text("İndir", fontFamily = InterFontFamily, fontWeight = FontWeight.Medium)
+                                Text("İndir", fontFamily = SfProFontFamily, fontWeight = FontWeight.Medium)
                             }
                         }
                     }
@@ -133,7 +136,7 @@ fun MainScreenPreview() {
                 Text(
                     text = "Son indirmeler",
                     fontSize = 13.sp,
-                    fontFamily = InterFontFamily,
+                    fontFamily = SfProFontFamily,
                     fontWeight = FontWeight.Bold,
                     color = muted
                 )
@@ -169,14 +172,14 @@ fun MainScreenPreview() {
                             Text(
                                 text = "instagram.com",
                                 fontSize = 15.sp,
-                                fontFamily = InterFontFamily,
+                                fontFamily = SfProFontFamily,
                                 fontWeight = FontWeight.Bold,
                                 color = textColor
                             )
                             Text(
                                 text = "/p/C123456789/",
                                 fontSize = 13.sp,
-                                fontFamily = InterFontFamily,
+                                fontFamily = SfProFontFamily,
                                 color = muted
                             )
                         }
@@ -186,7 +189,7 @@ fun MainScreenPreview() {
                                 .background(okBg, RoundedCornerShape(12.dp))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
-                            Text("5 dosya", fontSize = 12.sp, fontFamily = InterFontFamily, color = okFg, fontWeight = FontWeight.Bold)
+                            Text("5 dosya", fontSize = 12.sp, fontFamily = SfProFontFamily, color = okFg, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -218,7 +221,7 @@ fun MainScreenPreview() {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("⬇️", fontSize = 15.sp)
                             Spacer(modifier = Modifier.height(2.dp))
-                            Text("İndir", fontSize = 11.sp, fontFamily = InterFontFamily, fontWeight = FontWeight.Bold, color = primary)
+                            Text("İndir", fontSize = 11.sp, fontFamily = SfProFontFamily, fontWeight = FontWeight.Bold, color = primary)
                         }
                     }
 
@@ -231,7 +234,7 @@ fun MainScreenPreview() {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("🖼️", fontSize = 15.sp)
                             Spacer(modifier = Modifier.height(2.dp))
-                            Text("Galeri", fontSize = 11.sp, fontFamily = InterFontFamily, color = muted)
+                            Text("Galeri", fontSize = 11.sp, fontFamily = SfProFontFamily, color = muted)
                         }
                     }
 
@@ -244,7 +247,7 @@ fun MainScreenPreview() {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("⚙️", fontSize = 15.sp)
                             Spacer(modifier = Modifier.height(2.dp))
-                            Text("Ayarlar", fontSize = 11.sp, fontFamily = InterFontFamily, color = muted)
+                            Text("Ayarlar", fontSize = 11.sp, fontFamily = SfProFontFamily, color = muted)
                         }
                     }
                 }
