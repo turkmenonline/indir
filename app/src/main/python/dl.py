@@ -358,6 +358,38 @@ def _has_files(dest):
     return False
 
 
+def _sanitize_filenames(dest):
+    if not os.path.exists(dest):
+        return
+    for root, dirs, files in os.walk(dest):
+        for filename in files:
+            if "None" in filename:
+                new_name = filename
+                for pattern in ["None_", "_None_", "-None-", "_None", "-None", "None"]:
+                    if pattern in new_name:
+                        new_name = new_name.replace(pattern, "" if pattern != "None" else "")
+                while "__" in new_name:
+                    new_name = new_name.replace("__", "_")
+                while "--" in new_name:
+                    new_name = new_name.replace("--", "-")
+                while "_-" in new_name:
+                    new_name = new_name.replace("_-", "-")
+                while "-_" in new_name:
+                    new_name = new_name.replace("-_", "-")
+                base, ext = os.path.splitext(new_name)
+                base = base.strip("_.-")
+                if not base:
+                    base = "download"
+                final_name = base + ext
+                if final_name != filename:
+                    old_path = os.path.join(root, filename)
+                    new_path = os.path.join(root, final_name)
+                    try:
+                        os.rename(old_path, new_path)
+                    except Exception:
+                        pass
+
+
 def _gallery(task_id, url, dest, cookies, template, sink=None):
     import gallery_dl
     from gallery_dl import config
@@ -450,7 +482,7 @@ class _Log:
         self.lines.append("hata: %s" % msg)
 
 
-def _ytdlp(task_id, url, dest, cookies, sink, quality="best"):
+def _ytdlp(task_id, url, dest, cookies, template, sink, quality="best"):
     import yt_dlp
     limiter = RateLimiter(0.5)
     tid_str = str(task_id)
@@ -495,8 +527,10 @@ def _ytdlp(task_id, url, dest, cookies, sink, quality="best"):
     else:
         fmt = 'best[ext=mp4]/best'
 
+    outtmpl = os.path.join(dest, template) if template else os.path.join(dest, "%(title).80B [%(id)s].%(ext)s")
+
     ydl_opts = {
-        "outtmpl": os.path.join(dest, "%(title).80s [%(id)s].%(ext)s"),
+        "outtmpl": outtmpl,
         "format": fmt,
         "noplaylist": True,
         "quiet": True,
@@ -507,12 +541,23 @@ def _ytdlp(task_id, url, dest, cookies, sink, quality="best"):
     }
     if cookies:
         ydl_opts["cookiefile"] = cookies
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+    except Exception as e:
+        err_msg = str(e)
+        if "output template" in err_msg.lower() or "template" in err_msg.lower() or "invalid" in err_msg.lower() or "outtmpl" in err_msg.lower():
+            log.warning(f"Şablon hatası ({err_msg}), varsayılan şablon ile yeniden deneniyor...")
+            ydl_opts["outtmpl"] = os.path.join(dest, "%(title).80B [%(id)s].%(ext)s")
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        else:
+            raise e
     return "\n".join(log.lines) or "tamam"
 
 
-def _run_tools(task_id, url, out_dir, cookies, template, sink, quality):
+def _run_tools(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, quality):
     tid_str = str(task_id)
     _tl.task_id = tid_str
     if any(d in url for d in YT_FIRST):
@@ -525,14 +570,15 @@ def _run_tools(task_id, url, out_dir, cookies, template, sink, quality):
             raise CancelledDownload("İptal edildi")
         try:
             if tool == "gallery":
-                out = _gallery(task_id, url, out_dir, cookies, template, sink)
+                out = _gallery(task_id, url, out_dir, cookies, gallery_template, sink)
             else:
-                out = _ytdlp(task_id, url, out_dir, cookies, sink, quality)
+                out = _ytdlp(task_id, url, out_dir, cookies, ytdlp_template, sink, quality)
         except Exception as e:
             out = "%s: %s" % (type(e).__name__, e)
         parts.append("[%s]\n%s" % (tool, out.strip()))
         if _has_files(out_dir):
             break
+    _sanitize_filenames(out_dir)
     return "\n\n".join(parts)
 
 
@@ -551,7 +597,7 @@ def _hard_stop(tid_str, w):
 CANCEL_RESULT = "[iptal]\nKullanıcı tarafından iptal edildi"
 
 
-def run(task_id, url, out_dir, cookies, template, sink, updates_dir=None, quality="best"):
+def run(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, updates_dir=None, quality="best"):
     tid_str = str(task_id)
     if updates_dir:
         setup_updates_path(updates_dir)
@@ -559,7 +605,7 @@ def run(task_id, url, out_dir, cookies, template, sink, updates_dir=None, qualit
 
     def work():
         try:
-            result["out"] = _run_tools(task_id, url, out_dir, cookies, template, sink, quality)
+            result["out"] = _run_tools(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, quality)
         except BaseException as e:
             result["err"] = e
 

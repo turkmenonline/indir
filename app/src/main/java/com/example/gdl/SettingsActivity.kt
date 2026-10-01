@@ -3,7 +3,9 @@ package com.example.gdl
 import android.app.Dialog
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.drawable.ColorDrawable
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -29,7 +31,8 @@ import java.io.File
 
 class SettingsActivity : AppCompatActivity() {
     private lateinit var album: EditText
-    private lateinit var template: EditText
+    private lateinit var galleryTemplateEdit: EditText
+    private lateinit var ytdlpTemplateEdit: EditText
     private lateinit var cookieBox: EditText
     private lateinit var status: TextView
     private lateinit var ytDlpVersionText: TextView
@@ -551,9 +554,13 @@ class SettingsActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_TEXT
             setText(Store.album(this@SettingsActivity))
         }
-        template = Ui.field(this, "örn. {category}_{id}_{num}.{extension}").apply {
+        galleryTemplateEdit = Ui.field(this, "{username|author[name]|category}_{tweet_id|post_shortcode|id}_{num}.{extension}").apply {
             inputType = InputType.TYPE_CLASS_TEXT
-            setText(Store.template(this@SettingsActivity))
+            setText(Store.rawPhotoTemplate(this@SettingsActivity))
+        }
+        ytdlpTemplateEdit = Ui.field(this, "%(title).200B [%(id)s].%(ext)s").apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+            setText(Store.rawYtdlpTemplate(this@SettingsActivity))
         }
         cookieBox = Ui.field(this, "cookies.txt içeriğini buraya yapıştırın").apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -576,19 +583,77 @@ class SettingsActivity : AppCompatActivity() {
 
         updateStatus()
 
+        fun makeLink(text: String, url: String): TextView {
+            return Ui.text(this, text, 12f, Ui.primary(this)).apply {
+                paintFlags = paintFlags or Paint.UNDERLINE_TEXT_FLAG
+                setOnClickListener {
+                    try {
+                        val i = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        startActivity(i)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+
         // Kaydetme kartı
         val saveCard = Ui.card(this).apply {
             addView(label("Galeri klasörü adı"))
             addView(album, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(8)))
             addView(helper("Pictures/… ve Movies/… altında oluşturulur"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(6)))
-            addView(label("Dosya adı şablonu"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(20)))
-            addView(template, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(8)))
-            addView(helper("Boş bırakırsan varsayılan kullanılır (yalnızca gallery-dl)"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(6)))
+
+            // gallery-dl template
+            addView(label("gallery-dl şablonu (X, Instagram ve diğer sosyal siteler)"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(20)))
+            addView(galleryTemplateEdit, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(8)))
+            addView(helper("gallery-dl için {alan} sözdizimi; boş bırakırsan varsayılan."), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(6)))
+            addView(helper("Örn: {a|b} ilk dolu alanı kullanır; X için author[name], Instagram için username; uzunluk sınırı için {alan:Xb60//}"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4)))
+            addView(makeLink("gallery-dl Kılavuzu", "https://github.com/mikf/gallery-dl/blob/master/docs/formatting.md"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4)))
+
+            // yt-dlp template
+            addView(label("yt-dlp şablonu (YouTube ve video siteleri)"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(20)))
+            addView(ytdlpTemplateEdit, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(8)))
+            addView(helper("yt-dlp için %(alan)s sözdizimi; boş bırakırsan varsayılan."), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(6)))
+            addView(helper("Örn: %(title).80B; yedek alan için %(uploader,channel|Bilinmiyor)s"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4)))
+            addView(makeLink("yt-dlp Kılavuzu (OUTPUT TEMPLATE)", "https://github.com/yt-dlp/yt-dlp#output-template"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4)))
+
             addView(
                 Ui.button(this@SettingsActivity, "Kaydet", Ui.Kind.FILLED) {
-                    Store.setAlbum(this@SettingsActivity, album.text.toString())
-                    Store.setTemplate(this@SettingsActivity, template.text.toString())
-                    toast("Kaydedildi")
+                    val aText = album.text.toString()
+                    val gText = galleryTemplateEdit.text.toString().trim()
+                    val ytText = ytdlpTemplateEdit.text.toString().trim()
+
+                    if (gText.contains("/") || gText.contains("\\") || ytText.contains("/") || ytText.contains("\\")) {
+                        toast("Şablon dosya adı içinde klasör ayırıcı (/ ve \\) içeremez")
+                        return@button
+                    }
+
+                    if (gText.contains("%(") && gText.contains(")s")) {
+                        toast("Uyarı: gallery-dl şablonunda yt-dlp sözdizimi (%(...)s) kullanıldı")
+                    }
+                    if (ytText.contains("{") && ytText.contains("}")) {
+                        toast("Uyarı: yt-dlp şablonunda gallery-dl sözdizimi ({...}) kullanıldı")
+                    }
+
+                    var finalG = gText
+                    if (finalG.isNotEmpty() && !finalG.contains("{extension}", ignoreCase = true)) {
+                        finalG = finalG.removeSuffix(".") + ".{extension}"
+                    }
+
+                    var finalYt = ytText
+                    if (finalYt.isNotEmpty() && !finalYt.contains("%(ext)s")) {
+                        finalYt = finalYt.removeSuffix(".") + ".%(ext)s"
+                    }
+
+                    galleryTemplateEdit.setText(finalG)
+                    ytdlpTemplateEdit.setText(finalYt)
+
+                    try {
+                        Store.setAlbum(this@SettingsActivity, aText)
+                        Store.setGalleryTemplate(this@SettingsActivity, finalG)
+                        Store.setYtdlpTemplate(this@SettingsActivity, finalYt)
+                        toast("Kaydedildi")
+                    } catch (e: Exception) {
+                        toast("Hata: ${e.message}")
+                    }
                 },
                 Ui.lp(Ui.MATCH, Ui.WRAP, t = d(20))
             )

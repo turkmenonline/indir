@@ -48,11 +48,47 @@ object Store {
         prefs(c).edit().putString("album", name).apply()
     }
 
-    fun template(c: Context): String = prefs(c).getString("template", "") ?: ""
-
-    fun setTemplate(c: Context, v: String) {
-        prefs(c).edit().putString("template", v.trim()).apply()
+    fun photoTemplate(c: Context): String {
+        val t = prefs(c).getString("template", "") ?: ""
+        return if (t.isEmpty()) "{username|author[name]|category}_{tweet_id|post_shortcode|id}_{num}.{extension}" else t
     }
+
+    fun rawPhotoTemplate(c: Context): String = prefs(c).getString("template", "") ?: ""
+
+    fun setPhotoTemplate(c: Context, v: String) = setGalleryTemplate(c, v)
+
+    fun galleryTemplate(c: Context): String = photoTemplate(c)
+
+    fun setGalleryTemplate(c: Context, v: String) {
+        val t = v.trim()
+        if (t.contains("/") || t.contains("\\")) {
+            throw IllegalArgumentException("Şablon dosya adı içinde klasör ayırıcı (/ ve \\) içeremez")
+        }
+        prefs(c).edit().putString("template", t).apply()
+    }
+
+    fun template(c: Context): String = galleryTemplate(c)
+
+    fun setTemplate(c: Context, v: String) = setGalleryTemplate(c, v)
+
+    fun videoTemplate(c: Context): String {
+        val t = prefs(c).getString("ytdlp_template", "") ?: ""
+        return if (t.isEmpty()) "%(title).200B [%(id)s].%(ext)s" else t
+    }
+
+    fun rawYtdlpTemplate(c: Context): String = prefs(c).getString("ytdlp_template", "") ?: ""
+
+    fun setYtdlpTemplate(c: Context, v: String) {
+        val t = v.trim()
+        if (t.contains("/") || t.contains("\\")) {
+            throw IllegalArgumentException("Şablon dosya adı içinde klasör ayırıcı (/ ve \\) içeremez")
+        }
+        prefs(c).edit().putString("ytdlp_template", t).apply()
+    }
+
+    fun ytdlpTemplate(c: Context): String = videoTemplate(c)
+
+    fun setVideoTemplate(c: Context, v: String) = setYtdlpTemplate(c, v)
 
     @Synchronized
     fun history(c: Context): List<JSONObject> {

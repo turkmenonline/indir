@@ -102,17 +102,35 @@ fun SettingsScreenPreview() {
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    Text("Dosya adı şablonu", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = textColor)
+                    Text("gallery-dl şablonu (X, Instagram ve diğer sosyal siteler)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = textColor)
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = "",
                         onValueChange = {},
-                        placeholder = { Text("örn. {category}_{id}_{num}.{extension}", color = Color(0xFF9A9AAA)) },
+                        placeholder = { Text("{username}_{id}_{num}.{extension}", color = Color(0xFF9A9AAA)) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
                     Text(
-                        "Boş bırakırsan varsayılan kullanılır (yalnızca gallery-dl)",
+                        "gallery-dl için {alan} sözdizimi; boş bırakırsan varsayılan.",
+                        fontSize = 12.sp,
+                        color = muted,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Text("yt-dlp şablonu (YouTube ve video siteleri)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = textColor)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = "",
+                        onValueChange = {},
+                        placeholder = { Text("%(uploader)s_%(title).80s [%(id)s].%(ext)s", color = Color(0xFF9A9AAA)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    Text(
+                        "yt-dlp için %(alan)s sözdizimi; boş bırakırsan varsayılan.",
                         fontSize = 12.sp,
                         color = muted,
                         modifier = Modifier.padding(top = 6.dp)

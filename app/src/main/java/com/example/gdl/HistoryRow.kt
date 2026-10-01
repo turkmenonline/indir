@@ -21,9 +21,9 @@ class HistoryRow(c: Context) : LinearLayout(c) {
     }
     private val sym = Ui.text(c, "", 18f, Ui.ERR, true)
     private val spin = ProgressBar(c)
-    private val platformTitle = Ui.text(c, "", 15f, Ui.textClr(c), true)
-    private val dateText = Ui.text(c, "", 12.5f, Ui.mutedClr(c))
-    private val sub = Ui.text(c, "", 13f, Ui.mutedClr(c))
+    private val platformTitle = Ui.text(c, "", 16f, Ui.textClr(c), true)
+    private val dateText = Ui.text(c, "", 13.5f, Ui.mutedClr(c))
+    private val sub = Ui.text(c, "", 13.5f, Ui.mutedClr(c))
     private val chipHolder = FrameLayout(c)
     private var chip: TextView? = null
     private val progressBar = ProgressBar(c, null, R.attr.progressBarStyleHorizontal).apply {

@@ -258,8 +258,10 @@ class DownloadService : Service() {
             val updatesDir = File(filesDir, "python_updates")
             val updatesPath = if (updatesDir.exists()) updatesDir.absolutePath else ""
             val quality = customQuality.takeIf { it.isNotEmpty() } ?: Store.videoQuality(this)
+            val galleryTemplate = Store.galleryTemplate(this)
+            val ytdlpTemplate = Store.ytdlpTemplate(this)
             log = Python.getInstance().getModule("dl")
-                .callAttr("run", id.toString(), url, dir.absolutePath, cookiePath, Store.template(this), sink, updatesPath, quality)
+                .callAttr("run", id.toString(), url, dir.absolutePath, cookiePath, galleryTemplate, ytdlpTemplate, sink, updatesPath, quality)
                 .toString()
 
             if (cancelledTasks.contains(id)) {
@@ -275,9 +277,10 @@ class DownloadService : Service() {
                 if (mime != null) {
                     val video = mime.startsWith("video")
                     val image = mime.startsWith("image")
-                    if (video || image) {
+                    val audio = mime.startsWith("audio")
+                    if (video || image || audio) {
                         if (video) log += "\n[ses] ${f.name}: ${if (hasAudio(f)) "var" else "YOK"}"
-                        if (save(f)) {
+                        if (save(f, platform)) {
                             savedFiles.add(f)
                             if (video) savedVideos++
                             if (image) savedImages++
@@ -455,22 +458,64 @@ class DownloadService : Service() {
         return Bitmap.createScaledBitmap(bmp, targetWidth, targetHeight, true)
     }
 
-    private fun save(f: File): Boolean {
+    private fun save(f: File, platform: String): Boolean {
         val mime = MimeTypeMap.getSingleton()
             .getMimeTypeFromExtension(f.extension.lowercase()) ?: return false
         val video = mime.startsWith("video")
-        if (!video && !mime.startsWith("image")) return false
+        val image = mime.startsWith("image")
+        val audio = mime.startsWith("audio")
+        if (!video && !image && !audio) return false
         val album = Store.album(this)
+
+        var cleanName = f.name.trim()
+
+        // Eğer dosya adının başında zaten platform adı yoksa ekleyeceğiz:
+        // Önce hazır gelen "Video by" veya "Photo by" fazlalıklarını temizleyip standart hale getirelim:
+        val typePrefix = when {
+            image -> "photo by"
+            video -> "video by"
+            audio -> "audio by"
+            else -> ""
+        }
+
+        // Eğer siteden zaten "video by" veya "photo by" ile başlamışsa o kısmı normalize et:
+        if (cleanName.startsWith("video by ", ignoreCase = true)) {
+            cleanName = cleanName.substring(9).trim()
+        } else if (cleanName.startsWith("photo by ", ignoreCase = true)) {
+            cleanName = cleanName.substring(9).trim()
+        } else if (cleanName.startsWith("audio by ", ignoreCase = true)) {
+            cleanName = cleanName.substring(9).trim()
+        }
+
+        // Platform adını temizle (boşsa ekleme):
+        val cleanPlatform = platform.trim()
+        
+        // Nihai dosya adı formatı: "Platform video by DosyaAdı.mp4"
+        val finalName = if (cleanPlatform.isNotEmpty() && typePrefix.isNotEmpty()) {
+            "$cleanPlatform $typePrefix $cleanName"
+        } else if (typePrefix.isNotEmpty()) {
+            "$typePrefix $cleanName"
+        } else {
+            cleanName
+        }
+
         val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, f.name)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, finalName)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
             put(
                 MediaStore.MediaColumns.RELATIVE_PATH,
-                if (video) "Movies/$album" else "Pictures/$album"
+                when {
+                    video -> "Movies/$album"
+                    audio -> "Music/$album"
+                    else -> "Pictures/$album"
+                }
             )
         }
-        val collection = if (video) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val collection = when {
+            video -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            audio -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            else -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        }
         val uri = contentResolver.insert(collection, values) ?: return false
         contentResolver.openOutputStream(uri)?.use { o ->
             f.inputStream().use { it.copyTo(o) }

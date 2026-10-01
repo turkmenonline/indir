@@ -196,15 +196,9 @@ class HistoryActivity : AppCompatActivity() {
         navigateToTab(0, 1)
     }
 
-    override fun onStart() {
-        super.onStart()
-        DownloadService.onStateChanged = { runOnUiThread { refresh() } }
+    override fun onResume() {
+        super.onResume()
         refresh()
-    }
-
-    override fun onStop() {
-        DownloadService.onStateChanged = null
-        super.onStop()
     }
 
     private fun refresh() {

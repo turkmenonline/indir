@@ -167,21 +167,28 @@ class MainActivity : AppCompatActivity() {
         handlePageAnimation(intent)
     }
 
-    override fun onStart() {
-        super.onStart()
-        DownloadService.onStateChanged = {
-            runOnUiThread {
-                updateActiveBox()
-                if (activeDetailDialog != null && activeDetailId != -1L) {
-                    if (!DownloadService.activeDownloads.containsKey(activeDetailId)) {
-                        activeDetailDialog?.dismiss()
-                    } else {
-                        updateOpenDetailDialog()
-                    }
-                }
+    fun refreshLiveDownloadBox() {
+        updateActiveBox()
+        if (activeDetailDialog != null && activeDetailId != -1L) {
+            if (!DownloadService.activeDownloads.containsKey(activeDetailId)) {
+                activeDetailDialog?.dismiss()
+            } else {
+                updateOpenDetailDialog()
             }
         }
-        updateActiveBox()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 1. Ekrana dönüldüğü an kartı güncel duruma eşitle
+        refreshLiveDownloadBox()
+        
+        // 2. Canlı dinleyiciyi tekrar bağla (böylece Geçmiş'ten dönülünce donmasın)
+        DownloadService.onStateChanged = {
+            runOnUiThread {
+                refreshLiveDownloadBox()
+            }
+        }
     }
 
     override fun onStop() {
@@ -202,7 +209,7 @@ class MainActivity : AppCompatActivity() {
             activeDownloadsContainer.visibility = View.VISIBLE
             val hasRunning = downloads.any { it.detail != "Sırada" }
             val headerTitle = if (hasRunning) "ŞU ANDA İNDİRİLİYOR" else "SIRADAKİ İNDİRMELER"
-            val headerTv = Ui.text(this, headerTitle, 12f, Ui.mutedClr(this), true).apply {
+            val headerTv = Ui.text(this, headerTitle, 13f, Ui.mutedClr(this), true).apply {
                 setPadding(0, 0, 0, Ui.dp(this@MainActivity, 8))
             }
             activeDownloadsContainer.addView(headerTv)
@@ -234,12 +241,12 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        val platformTv = Ui.text(c, st.platform, 15f, Ui.textClr(c), true).apply {
+        val platformTv = Ui.text(c, st.platform, 16f, Ui.textClr(c), true).apply {
             isSingleLine = true
             ellipsize = TextUtils.TruncateAt.END
         }
 
-        val detailTv = Ui.text(c, st.detail, 13f, Ui.mutedClr(c)).apply {
+        val detailTv = Ui.text(c, st.detail, 13.5f, Ui.mutedClr(c)).apply {
             gravity = Gravity.END
             isSingleLine = true
         }
@@ -263,7 +270,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val statusText = if (isQueued) "Sırada bekliyor" else "Şu anda indiriliyor"
-        val statusTv = Ui.text(c, statusText, 12f, Ui.mutedClr(c)).apply {
+        val statusTv = Ui.text(c, statusText, 13.5f, Ui.mutedClr(c)).apply {
             isSingleLine = true
         }
 
@@ -534,6 +541,7 @@ class MainActivity : AppCompatActivity() {
         setIntent(intent)
         handleIntent(intent)
         handlePageAnimation(intent)
+        refreshLiveDownloadBox()
     }
 
     private fun handleIntent(intent: Intent?) {

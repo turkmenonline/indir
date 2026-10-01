@@ -133,7 +133,7 @@ object Ui {
         val style = if (bold) Typeface.BOLD else Typeface.NORMAL
         if (c == null) return Typeface.create(Typeface.DEFAULT, style)
         return try {
-            val tf = ResourcesCompat.getFont(c, R.font.space_grotesk)
+            val tf = ResourcesCompat.getFont(c, R.font.inter)
             if (tf != null) Typeface.create(tf, style) else Typeface.create(Typeface.DEFAULT, style)
         } catch (_: Throwable) {
             Typeface.create(Typeface.DEFAULT, style)
@@ -148,7 +148,7 @@ object Ui {
             typeface = font(c, bold)
         }
 
-    fun childText(c: Context, s: String, sp: Float = 14f, color: Int? = null, bold: Boolean = false): TextView =
+    fun childText(c: Context, s: String, sp: Float = 15f, color: Int? = null, bold: Boolean = false): TextView =
         text(c, s, sp, color ?: textClr(c), bold)
 
     fun button(c: Context, label: String, kind: Kind, onClick: () -> Unit): Button {
@@ -162,7 +162,7 @@ object Ui {
         return Button(c).apply {
             text = label
             isAllCaps = false
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setTextColor(fgClr)
             typeface = font(c, bold = true)
             stateListAnimator = null
@@ -187,7 +187,7 @@ object Ui {
 
     fun field(c: Context, hintText: String): EditText = EditText(c).apply {
         hint = hintText
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
         setTextColor(textClr(c))
         setHintTextColor(hintClr(c))
         typeface = font(c, bold = false)
@@ -239,7 +239,7 @@ object Ui {
 
             val tv = TextView(c).apply {
                 text = title
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f)
                 setTextColor(textColor)
                 typeface = font(c, bold = isSelected)
                 gravity = Gravity.CENTER
@@ -357,7 +357,7 @@ object Ui {
                     }
                 }
 
-                val label = text(c, item.title, 10.5f, fgColor, isSelected).apply {
+                val label = text(c, item.title, 12.5f, fgColor, isSelected).apply {
                     gravity = Gravity.CENTER
                     maxLines = 1
                     ellipsize = null
