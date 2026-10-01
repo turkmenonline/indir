@@ -50,26 +50,24 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 
-val localProperties = Properties().apply {
-    val localFile = rootProject.file("local.properties")
-    if (localFile.exists()) {
-        localFile.inputStream().use { stream ->
-            load(stream)
-        }
-    }
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
 }
-val isWindows = System.getProperty("os.name").lowercase().contains("windows")
-val defaultPython = if (isWindows) "python" else "python3"
-val pythonExec = localProperties.getProperty("python.path") ?: defaultPython
+val localPython = localProps.getProperty("python.path")
 
 chaquopy {
     defaultConfig {
-        buildPython(pythonExec)
+        // Eğer yerel bilgisayarda tanımlı bir Python varsa onu kullan, yoksa (GitHub Actions / Linux ise) buildPython çağırma, sistemdeki python3'ü otomatik bulsun:
+        if (!localPython.isNullOrBlank() && file(localPython).exists()) {
+            buildPython(localPython)
+        }
         version = "3.14"
         pip {
             install("gallery-dl")
             install("yt-dlp")
             install("certifi")
+            install("urllib3<2.0.0")
         }
     }
 }
