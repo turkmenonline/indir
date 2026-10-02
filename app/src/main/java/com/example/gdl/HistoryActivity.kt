@@ -41,7 +41,7 @@ class HistoryActivity : AppCompatActivity() {
 
         historyListLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, d(4), 0, d(100))
+            setPadding(0, d(4), 0, 0)
         }
 
         val scroll = ScrollView(this).apply {
@@ -54,7 +54,7 @@ class HistoryActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.bg(this@HistoryActivity))
             setPadding(d(16), 0, d(16), 0)
-            addView(header, Ui.lp(Ui.MATCH, Ui.WRAP))
+            addView(header, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12), b = d(12)))
             addView(scroll, Ui.lp(Ui.MATCH, 0, 1f))
         }
 
@@ -232,7 +232,7 @@ class HistoryActivity : AppCompatActivity() {
         }
 
         val bottomSpacer = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d(110))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d(75))
         }
         historyListLayout.addView(bottomSpacer)
     }

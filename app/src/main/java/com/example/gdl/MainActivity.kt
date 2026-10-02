@@ -70,7 +70,7 @@ class MainActivity : AppCompatActivity() {
         fun d(v: Int) = Ui.dp(this, v)
 
         // Üst başlık
-        val header = Ui.header(this, "İNDİR", null, null)
+        val header = Ui.header(this, "indir", null, null)
 
         // Link kartı
         input = Ui.field(this, "Gönderi linkini yapıştırın").apply {
@@ -127,7 +127,7 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Ui.bg(this@MainActivity))
             setPadding(d(16), 0, d(16), d(100))
             clipToPadding = false
-            addView(header, Ui.lp(Ui.MATCH, Ui.WRAP))
+            addView(header, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12), b = d(12)))
             addView(inputCard, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(16)))
             addView(activeDownloadsContainer, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(16)))
         }

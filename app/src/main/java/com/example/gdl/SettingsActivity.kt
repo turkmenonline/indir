@@ -51,11 +51,13 @@ class SettingsActivity : AppCompatActivity() {
     private fun toast(t: String) = Toast.makeText(this, t, Toast.LENGTH_SHORT).show()
 
     private fun section(t: String): TextView =
-        Ui.text(this, t, 13f, Ui.primary(this), true).apply { setPadding(d(4), 0, 0, 0) }
+        Ui.text(this, t.uppercase(), 12.5f, Ui.mutedClr(this), bold = true).apply {
+            letterSpacing = 0.05f
+        }
 
-    private fun label(t: String): TextView = Ui.text(this, t, 14f, Ui.textClr(this), true)
+    private fun label(t: String): TextView = Ui.text(this, t, 15.5f, Ui.textClr(this), true)
 
-    private fun helper(t: String): TextView = Ui.text(this, t, 12f, Ui.mutedClr(this))
+    private fun helper(t: String): TextView = Ui.text(this, t, 13f, Ui.mutedClr(this), false)
 
     private fun updateStatus() {
         val f = cookieFile()
@@ -403,7 +405,7 @@ class SettingsActivity : AppCompatActivity() {
         } catch (_: Throwable) {}
         super.onCreate(savedInstanceState)
 
-        // Kart 1: yt-dlp (Video Motoru)
+        // yt-dlp (Video Motoru)
         val ytTitle = label("yt-dlp (Video Motoru)")
         val ytSub = helper("Sürüm: Yükleniyor…")
         ytDlpVersionText = ytSub
@@ -448,11 +450,7 @@ class SettingsActivity : AppCompatActivity() {
             addView(ytRightButtons, Ui.lp(Ui.WRAP, Ui.WRAP, l = d(8)))
         }
 
-        val ytCard = Ui.card(this).apply {
-            addView(ytCardContent)
-        }
-
-        // Kart 2: gallery-dl (Fotoğraf Motoru)
+        // gallery-dl (Fotoğraf Motoru)
         val gdlTitle = label("gallery-dl (Fotoğraf Motoru)")
         val gdlSub = helper("Sürüm: Yükleniyor…")
         galleryDlVersionText = gdlSub
@@ -489,11 +487,20 @@ class SettingsActivity : AppCompatActivity() {
             addView(btnGdlUpdate, Ui.lp(Ui.WRAP, Ui.WRAP, l = d(8)))
         }
 
-        val gdlCard = Ui.card(this).apply {
+        // Kart 1 (GENEL)
+        val genCard = Ui.card(this).apply {
+            addView(ytCardContent)
+            val divider = View(context).apply {
+                setBackgroundColor(Ui.line(context))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(context, 1)).apply {
+                    setMargins(0, Ui.dp(context, 14), 0, Ui.dp(context, 14))
+                }
+            }
+            addView(divider)
             addView(gdlCardContent)
         }
 
-        // Tema kartı
+        // Tema segmenti
         val themeCardHolder = FrameLayout(this)
         fun updateThemeSegment() {
             themeCardHolder.removeAllViews()
@@ -515,13 +522,8 @@ class SettingsActivity : AppCompatActivity() {
             themeCardHolder.addView(seg, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
         }
         updateThemeSegment()
-        val themeCard = Ui.card(this).apply {
-            addView(label("Uygulama Teması"))
-            addView(helper("Arayüz rengini tercihine göre ayarlar"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4), b = d(12)))
-            addView(themeCardHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
-        }
 
-        // Video Kalitesi kartı
+        // Video Kalitesi segmenti
         val qualityCardHolder = FrameLayout(this)
         fun updateQualitySegment() {
             qualityCardHolder.removeAllViews()
@@ -544,7 +546,21 @@ class SettingsActivity : AppCompatActivity() {
             qualityCardHolder.addView(seg, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
         }
         updateQualitySegment()
-        val qualityCard = Ui.card(this).apply {
+
+        // Kart 2 (GÖRÜNÜM)
+        val appearanceCard = Ui.card(this).apply {
+            addView(label("Uygulama Teması"))
+            addView(helper("Arayüz rengini tercihine göre ayarlar"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4), b = d(12)))
+            addView(themeCardHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
+
+            val divider2 = View(context).apply {
+                setBackgroundColor(Ui.line(context))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(context, 1)).apply {
+                    setMargins(0, Ui.dp(context, 16), 0, Ui.dp(context, 16))
+                }
+            }
+            addView(divider2)
+
             addView(label("Video Kalitesi"))
             addView(helper("İndirilen videoların çözünürlük kalitesini belirler"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4), b = d(12)))
             addView(qualityCardHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
@@ -584,7 +600,7 @@ class SettingsActivity : AppCompatActivity() {
         updateStatus()
 
         fun makeLink(text: String, url: String): TextView {
-            return Ui.text(this, text, 12f, Ui.primary(this)).apply {
+            return Ui.text(this, text, 13f, Ui.primary(this), bold = true).apply {
                 paintFlags = paintFlags or Paint.UNDERLINE_TEXT_FLAG
                 setOnClickListener {
                     try {
@@ -595,20 +611,18 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        // Kaydetme kartı
-        val saveCard = Ui.card(this).apply {
+        // Kart 3 (KAYDETME)
+        val storageCard = Ui.card(this).apply {
             addView(label("Galeri klasörü adı"))
             addView(album, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(8)))
             addView(helper("Pictures/… ve Movies/… altında oluşturulur"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(6)))
 
-            // gallery-dl template
             addView(label("gallery-dl şablonu (X, Instagram ve diğer sosyal siteler)"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(20)))
             addView(galleryTemplateEdit, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(8)))
             addView(helper("gallery-dl için {alan} sözdizimi; boş bırakırsan varsayılan."), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(6)))
             addView(helper("Örn: {a|b} ilk dolu alanı kullanır; X için author[name], Instagram için username; uzunluk sınırı için {alan:Xb60//}"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4)))
             addView(makeLink("gallery-dl Kılavuzu", "https://github.com/mikf/gallery-dl/blob/master/docs/formatting.md"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4)))
 
-            // yt-dlp template
             addView(label("yt-dlp şablonu (YouTube ve video siteleri)"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(20)))
             addView(ytdlpTemplateEdit, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(8)))
             addView(helper("yt-dlp için %(alan)s sözdizimi; boş bırakırsan varsayılan."), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(6)))
@@ -659,7 +673,7 @@ class SettingsActivity : AppCompatActivity() {
             )
         }
 
-        // Çerez kartı
+        // Kart 4 (ÇEREZ)
         @Suppress("DEPRECATION")
         val cookieButtons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -693,7 +707,7 @@ class SettingsActivity : AppCompatActivity() {
             )
         }
 
-        // Geçmiş kartı
+        // Kart 5 (GEÇMİŞ)
         val historyCard = Ui.card(this).apply {
             addView(helper("İndirme geçmişini ve kayıtlarını temizler. Galerideki dosyalara dokunmaz."))
             addView(
@@ -707,25 +721,25 @@ class SettingsActivity : AppCompatActivity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(d(16), 0, d(16), d(100))
+            setPadding(d(16), 0, d(16), 0)
             clipToPadding = false
-            addView(section("Genel"), Ui.lp(Ui.WRAP, Ui.WRAP, b = d(8)))
-            addView(ytCard, Ui.lp(Ui.MATCH, Ui.WRAP))
-            addView(gdlCard, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(10)))
-            addView(section("Görünüm"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(24), b = d(8)))
-            addView(themeCard, Ui.lp(Ui.MATCH, Ui.WRAP))
-            addView(qualityCard, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(10)))
-            addView(section("Kaydetme"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(24), b = d(8)))
-            addView(saveCard, Ui.lp(Ui.MATCH, Ui.WRAP))
-            addView(section("Çerez"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(24), b = d(8)))
+            addView(section("GENEL"), Ui.lp(Ui.WRAP, Ui.WRAP, b = d(8)))
+            addView(genCard, Ui.lp(Ui.MATCH, Ui.WRAP))
+            addView(section("GÖRÜNÜM"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(24), b = d(8)))
+            addView(appearanceCard, Ui.lp(Ui.MATCH, Ui.WRAP))
+            addView(section("KAYDETME"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(24), b = d(8)))
+            addView(storageCard, Ui.lp(Ui.MATCH, Ui.WRAP))
+            addView(section("ÇEREZ"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(24), b = d(8)))
             addView(cookieCard, Ui.lp(Ui.MATCH, Ui.WRAP))
-            addView(section("Geçmiş"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(24), b = d(8)))
+            addView(section("GEÇMİŞ"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(24), b = d(8)))
             addView(historyCard, Ui.lp(Ui.MATCH, Ui.WRAP))
         }
+
         val bottomSpacer = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(this@SettingsActivity, 110))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d(75))
         }
         content.addView(bottomSpacer)
+
         val scroll = ScrollView(this).apply {
             isFillViewport = false
             clipToPadding = false
@@ -740,7 +754,7 @@ class SettingsActivity : AppCompatActivity() {
         mainContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.bg(this@SettingsActivity))
-            addView(header, Ui.lp(Ui.MATCH, Ui.WRAP, l = d(12), r = d(12)))
+            addView(header, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12), b = d(12)))
             addView(scroll, Ui.lp(Ui.MATCH, 0, 1f))
         }
 

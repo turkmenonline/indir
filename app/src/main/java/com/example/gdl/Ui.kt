@@ -130,8 +130,8 @@ object Ui {
         RippleDrawable(ColorStateList.valueOf(RIPPLE), base, shape(Color.WHITE, radius))
 
     fun font(c: Context?, bold: Boolean = false): Typeface {
-        if (c == null) return Typeface.DEFAULT
-        val fontRes = if (bold) R.font.sf_pro_semibold else R.font.sf_pro_regular
+        if (c == null) return if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+        val fontRes = if (bold) R.font.sf_pro_bold else R.font.sf_pro_regular
         return try {
             val tf = ResourcesCompat.getFont(c, fontRes)
             tf ?: (if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT)
@@ -168,7 +168,7 @@ object Ui {
         return Button(c).apply {
             text = label
             isAllCaps = false
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             setTextColor(fgClr)
             typeface = font(c, bold = true)
             stateListAnimator = null
@@ -193,7 +193,7 @@ object Ui {
 
     fun field(c: Context, hintText: String): EditText = EditText(c).apply {
         hint = hintText
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
         setTextColor(textClr(c))
         setHintTextColor(hintClr(c))
         typeface = font(c, bold = false)
@@ -302,7 +302,7 @@ object Ui {
         LinearLayout(c).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(c, 64)
+            minimumHeight = dp(c, 56)
             val size = dp(c, 48)
 
             if (leading != null) {
@@ -312,8 +312,9 @@ object Ui {
                 addView(dummyLeft, lp(size, size))
             }
 
-            val titleView = text(c, title, 20f, textClr(c), true).apply {
+            val titleView = text(c, title, 24f, textClr(c), true).apply {
                 gravity = Gravity.CENTER
+                letterSpacing = -0.02f
             }
             addView(titleView, lp(0, WRAP, 1f))
 
@@ -324,6 +325,62 @@ object Ui {
                 addView(dummyRight, lp(size, size))
             }
         }
+
+    fun iosGroupedRow(c: Context, title: String, subtitle: String, showDivider: Boolean, onClick: () -> Unit): View {
+        val container = LinearLayout(c).apply {
+            orientation = LinearLayout.VERTICAL
+            val p = dp(c, 16)
+            setPadding(p, dp(c, 14), p, dp(c, 14))
+            background = ripple(shape(Color.TRANSPARENT, 0f), 0f)
+            setOnClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onClick()
+            }
+        }
+
+        val rowLayout = LinearLayout(c).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val textCol = LinearLayout(c).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(text(c, title, 16f, textClr(c), true))
+            addView(text(c, subtitle, 13f, mutedClr(c), false), lp(WRAP, WRAP, t = dp(c, 2)))
+        }
+
+        val chevron = text(c, "›", 20f, mutedClr(c), true).apply {
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+        }
+
+        rowLayout.addView(textCol, lp(0, WRAP, 1f))
+        rowLayout.addView(chevron, lp(WRAP, WRAP, l = dp(c, 12)))
+        container.addView(rowLayout)
+
+        if (showDivider) {
+            val divider = View(c).apply {
+                setBackgroundColor(line(c))
+                layoutParams = LinearLayout.LayoutParams(MATCH, dp(c, 1)).apply {
+                    setMargins(dp(c, 16), dp(c, 14), 0, 0)
+                }
+            }
+            container.addView(divider)
+        }
+
+        return container
+    }
+
+    fun iosGroupedCard(c: Context, views: List<View>): LinearLayout {
+        return LinearLayout(c).apply {
+            orientation = LinearLayout.VERTICAL
+            val radius = dp(c, 16).toFloat()
+            val borderClr = if (isDark(c)) safeColor("#2C2C2E", Color.GRAY) else safeColor("#1A000000", Color.LTGRAY)
+            background = shape(cardBg(c), radius, borderClr, dp(c, 1))
+            clipToOutline = true
+            views.forEach { addView(it, lp(MATCH, WRAP)) }
+        }
+    }
 
     data class NavItem(val title: String, val iconRes: Int)
 
@@ -401,6 +458,17 @@ object Ui {
 
                 addView(tabCell, lp(0, WRAP, 1f, l = dp(c, 2), r = dp(c, 2)))
             }
+        }
+    }
+
+    fun iosLargeTitle(c: Context, title: String): TextView {
+        return TextView(c).apply {
+            this.text = title
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
+            setTextColor(textClr(c))
+            typeface = font(c, bold = true)
+            letterSpacing = -0.02f
+            gravity = Gravity.START
         }
     }
 }
