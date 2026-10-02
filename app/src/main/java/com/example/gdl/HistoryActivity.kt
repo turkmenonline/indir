@@ -19,6 +19,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONObject
 
@@ -74,7 +75,7 @@ class HistoryActivity : AppCompatActivity() {
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
         ).apply {
-            setMargins(d(28), 0, d(28), d(20))
+            setMargins(0, 0, 0, d(24))
         }
 
         val scrollHandler = Handler(Looper.getMainLooper())
@@ -198,10 +199,26 @@ class HistoryActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        refresh()
+        reloadHistory()
+    }
+    
+    private val globalStateListener: () -> Unit = {
+        runOnUiThread {
+            reloadHistory()
+        }
     }
 
-    private fun refresh() {
+    override fun onStart() {
+        super.onStart()
+        DownloadService.addStateListener(globalStateListener)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        DownloadService.removeStateListener(globalStateListener)
+    }
+
+    private fun reloadHistory() {
         fun d(v: Int) = Ui.dp(this, v)
         hist = Store.history(this).filter { item ->
             val s = item.optString("status", "")
@@ -235,14 +252,6 @@ class HistoryActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d(75))
         }
         historyListLayout.addView(bottomSpacer)
-    }
-
-    private fun start(text: String) {
-        val url = Regex("https?://\\S+").find(text)?.value
-        if (url == null) return
-        val i = Intent(this, DownloadService::class.java)
-        i.putExtra(DownloadService.EXTRA_URL, url)
-        startForegroundService(i)
     }
 
     private fun showItem(h: JSONObject) {
@@ -300,47 +309,26 @@ class HistoryActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
         }
 
-        val cancelBtn = Button(context).apply {
-            text = "Kapat"
-            isAllCaps = false
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setTextColor(Ui.textClr(context))
-            typeface = Ui.font(context, bold = true)
-            stateListAnimator = null
-            minHeight = Ui.dp(context, 48)
-            minimumHeight = Ui.dp(context, 48)
+        val cancelBtn = Ui.button(context, "Kapat", Ui.Kind.TONAL) {
+            dialog.dismiss()
+        }.apply {
             val tonalBg = if (Ui.isDark(context)) Color.parseColor("#3A3A3C") else Color.parseColor("#E5E5EA")
             background = Ui.ripple(Ui.shape(tonalBg, 999f), 999f)
-            setOnClickListener {
-                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                dialog.dismiss()
-            }
         }
 
-        if (isSuccess) {
-            buttonRow.addView(cancelBtn, Ui.lp(Ui.MATCH, Ui.WRAP))
-        } else {
-            val retryBtn = Button(context).apply {
-                text = "Tekrar Dene"
-                isAllCaps = false
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                setTextColor(Color.WHITE)
-                typeface = Ui.font(context, bold = true)
-                stateListAnimator = null
-                minHeight = Ui.dp(context, 48)
-                minimumHeight = Ui.dp(context, 48)
-                val blueBg = Ui.primary(context)
-                background = Ui.ripple(Ui.shape(blueBg, 999f), 999f)
-                setOnClickListener {
-                    it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    start(url)
-                    dialog.dismiss()
-                }
+        val retryBtn = Ui.button(context, "Tekrar İndir", Ui.Kind.FILLED) {
+            val intent = Intent(context, DownloadService::class.java).apply {
+                putExtra(DownloadService.EXTRA_URL, url)
             }
-
-            buttonRow.addView(cancelBtn, Ui.lp(0, Ui.WRAP, 1f, r = Ui.dp(context, 8)))
-            buttonRow.addView(retryBtn, Ui.lp(0, Ui.WRAP, 1f, l = Ui.dp(context, 8)))
+            context.startForegroundService(intent)
+            Toast.makeText(context, "İndirme sıraya alındı", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
+        }.apply {
+            background = Ui.ripple(Ui.shape(Ui.primary(context), 999f), 999f)
         }
+
+        buttonRow.addView(cancelBtn, Ui.lp(0, Ui.WRAP, 1f, r = Ui.dp(context, 8)))
+        buttonRow.addView(retryBtn, Ui.lp(0, Ui.WRAP, 1f, l = Ui.dp(context, 8)))
 
         rootLayout.addView(buttonRow, Ui.lp(Ui.MATCH, Ui.WRAP))
 

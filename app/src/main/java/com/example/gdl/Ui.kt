@@ -13,6 +13,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.view.animation.DecelerateInterpolator
 import android.widget.Button
 import android.widget.EditText
@@ -303,7 +304,7 @@ object Ui {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(c, 56)
-            val size = dp(c, 48)
+            val size = dp(c, 40)
 
             if (leading != null) {
                 addView(leading, lp(size, size))
@@ -391,64 +392,55 @@ object Ui {
         onSelect: (Int) -> Unit
     ): LinearLayout {
         val isDarkTheme = isDark(c)
-        val glassBgColor = if (isDarkTheme) safeColor("#F21C1C1E", Color.BLACK) else safeColor("#F4FFFFFF", Color.WHITE)
-        val borderWhite = if (isDarkTheme) safeColor("#40FFFFFF", Color.DKGRAY) else safeColor("#D1D1D6", Color.LTGRAY)
-        val strokeWidth = (1.5f * (c.resources.displayMetrics.density)).toInt()
+        val glassBgColor = if (isDarkTheme) Color.parseColor("#CC1C1C22") else Color.parseColor("#F2FFFFFF")
+        val borderWhite = if (isDarkTheme) Color.parseColor("#50FFFFFF") else Color.parseColor("#25000000")
+        val strokeWidth = (1.5f * c.resources.displayMetrics.density).toInt()
         val pillRadius = 999f
 
         return LinearLayout(c).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            val pV = dp(c, 4)
-            val pH = dp(c, 6)
+            val pV = dp(c, 6)
+            val pH = dp(c, 8)
             setPadding(pH, pV, pH, pV)
             background = shape(glassBgColor, pillRadius, borderWhite, strokeWidth)
-            elevation = dp(c, 14).toFloat()
+            elevation = dp(c, 16).toFloat()
+            outlineProvider = ViewOutlineProvider.BACKGROUND
 
             items.forEachIndexed { index, item ->
                 val isSelected = (index == selectedIndex)
-                val activeColor = primary(c)
-                val inactiveColor = mutedClr(c)
+                val activeColor = if (isDarkTheme) Color.parseColor("#0A84FF") else Color.parseColor("#007AFF")
+                val inactiveColor = if (isDarkTheme) Color.parseColor("#8E8E93") else Color.parseColor("#636366")
                 val fgColor = if (isSelected) activeColor else inactiveColor
 
+                val sz = dp(c, 26)
                 val icon = ImageView(c).apply {
                     setImageResource(item.iconRes)
                     imageTintList = ColorStateList.valueOf(fgColor)
                     scaleType = ImageView.ScaleType.FIT_CENTER
-                    val sz = dp(c, 20)
                     layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
-                        gravity = Gravity.CENTER_HORIZONTAL
+                        gravity = Gravity.CENTER
                     }
-                }
-
-                val label = text(c, item.title, 12.5f, fgColor, isSelected).apply {
-                    gravity = Gravity.CENTER
-                    maxLines = 1
-                    ellipsize = null
                 }
 
                 val tabBg = if (isSelected) {
                     if (isDarkTheme) {
-                        shape(Color.parseColor("#25FFFFFF"), 999f, Color.parseColor("#40FFFFFF"), dp(c, 1))
+                        shape(Color.parseColor("#38FFFFFF"), 999f, Color.parseColor("#60FFFFFF"), dp(c, 1))
                     } else {
-                        shape(Color.parseColor("#18007AFF"), 999f, Color.parseColor("#30007AFF"), dp(c, 1))
+                        shape(Color.parseColor("#20007AFF"), 999f, Color.parseColor("#40007AFF"), dp(c, 1))
                     }
                 } else {
                     shape(Color.TRANSPARENT, 999f)
                 }
 
-                val tabCell = LinearLayout(c).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.CENTER
-                    minimumWidth = dp(c, 68)
-                    val pTabV = dp(c, 4)
-                    val pTabH = dp(c, 10)
-                    setPadding(pTabH, pTabV, pTabH, pTabV)
+                val cellWidth = dp(c, 78)
+                val cellHeight = dp(c, 48)
 
+                val tabCell = LinearLayout(c).apply {
+                    gravity = Gravity.CENTER
                     background = ripple(tabBg, 999f)
 
                     addView(icon)
-                    addView(label, lp(WRAP, WRAP, t = dp(c, 2)))
 
                     setOnClickListener {
                         it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -456,7 +448,10 @@ object Ui {
                     }
                 }
 
-                addView(tabCell, lp(0, WRAP, 1f, l = dp(c, 2), r = dp(c, 2)))
+                addView(tabCell, LinearLayout.LayoutParams(cellWidth, cellHeight).apply {
+                    gravity = Gravity.CENTER
+                    setMargins(dp(c, 4), 0, dp(c, 4), 0)
+                })
             }
         }
     }

@@ -2,6 +2,7 @@ package com.example.gdl
 
 import android.app.Dialog
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.ColorDrawable
@@ -19,6 +20,7 @@ import android.view.Window
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -410,9 +412,13 @@ class SettingsActivity : AppCompatActivity() {
         val ytSub = helper("Sürüm: Yükleniyor…")
         ytDlpVersionText = ytSub
 
-        val btnYtUpdate = Ui.text(this, "🔄", 18f, Ui.primary(this), bold = true).apply {
-            gravity = Gravity.CENTER
-            val p = d(10)
+        val motorIconTint = if (Ui.isDark(this)) Color.WHITE else Color.parseColor("#007AFF")
+
+        val btnYtUpdate = ImageView(this).apply {
+            setImageResource(R.drawable.ic_autorenew)
+            imageTintList = ColorStateList.valueOf(motorIconTint)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            val p = d(7)
             setPadding(p, p, p, p)
             background = Ui.ripple(Ui.shape(Ui.primaryBg(this@SettingsActivity), d(12).toFloat()), d(12).toFloat())
             setOnClickListener {
@@ -420,9 +426,11 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        val btnYtSettings = Ui.text(this, "⚙️", 18f, Ui.primary(this), bold = true).apply {
-            gravity = Gravity.CENTER
-            val p = d(10)
+        val btnYtSettings = ImageView(this).apply {
+            setImageResource(R.drawable.ic_tab_settings)
+            imageTintList = ColorStateList.valueOf(motorIconTint)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            val p = d(7)
             setPadding(p, p, p, p)
             background = Ui.ripple(Ui.shape(Ui.primaryBg(this@SettingsActivity), d(12).toFloat()), d(12).toFloat())
             setOnClickListener {
@@ -433,8 +441,13 @@ class SettingsActivity : AppCompatActivity() {
         val ytRightButtons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(btnYtUpdate, Ui.lp(Ui.WRAP, Ui.WRAP, r = d(6)))
-            addView(btnYtSettings, Ui.lp(Ui.WRAP, Ui.WRAP))
+            addView(btnYtUpdate, LinearLayout.LayoutParams(d(36), d(36)).apply {
+                marginEnd = d(6)
+                gravity = Gravity.CENTER_VERTICAL
+            })
+            addView(btnYtSettings, LinearLayout.LayoutParams(d(36), d(36)).apply {
+                gravity = Gravity.CENTER_VERTICAL
+            })
         }
 
         val ytTextColumn = LinearLayout(this).apply {
@@ -464,9 +477,11 @@ class SettingsActivity : AppCompatActivity() {
             addView(gdlBadge, Ui.lp(Ui.WRAP, Ui.WRAP, l = d(8)))
         }
 
-        val btnGdlUpdate = Ui.text(this, "🔄", 18f, Ui.primary(this), bold = true).apply {
-            gravity = Gravity.CENTER
-            val p = d(10)
+        val btnGdlUpdate = ImageView(this).apply {
+            setImageResource(R.drawable.ic_autorenew)
+            imageTintList = ColorStateList.valueOf(motorIconTint)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            val p = d(7)
             setPadding(p, p, p, p)
             background = Ui.ripple(Ui.shape(Ui.primaryBg(this@SettingsActivity), d(12).toFloat()), d(12).toFloat())
             setOnClickListener {
@@ -484,7 +499,10 @@ class SettingsActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(gdlTextColumn, Ui.lp(0, Ui.WRAP, 1f))
-            addView(btnGdlUpdate, Ui.lp(Ui.WRAP, Ui.WRAP, l = d(8)))
+            addView(btnGdlUpdate, LinearLayout.LayoutParams(d(36), d(36)).apply {
+                marginStart = d(8)
+                gravity = Gravity.CENTER_VERTICAL
+            })
         }
 
         // Kart 1 (GENEL)
@@ -619,15 +637,11 @@ class SettingsActivity : AppCompatActivity() {
 
             addView(label("gallery-dl şablonu (X, Instagram ve diğer sosyal siteler)"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(20)))
             addView(galleryTemplateEdit, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(8)))
-            addView(helper("gallery-dl için {alan} sözdizimi; boş bırakırsan varsayılan."), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(6)))
-            addView(helper("Örn: {a|b} ilk dolu alanı kullanır; X için author[name], Instagram için username; uzunluk sınırı için {alan:Xb60//}"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4)))
-            addView(makeLink("gallery-dl Kılavuzu", "https://github.com/mikf/gallery-dl/blob/master/docs/formatting.md"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4)))
+            addView(makeLink("gallery-dl Kılavuzu", "https://github.com/mikf/gallery-dl/blob/master/docs/formatting.md"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(6)))
 
             addView(label("yt-dlp şablonu (YouTube ve video siteleri)"), Ui.lp(Ui.WRAP, Ui.WRAP, t = d(20)))
             addView(ytdlpTemplateEdit, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(8)))
-            addView(helper("yt-dlp için %(alan)s sözdizimi; boş bırakırsan varsayılan."), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(6)))
-            addView(helper("Örn: %(title).80B; yedek alan için %(uploader,channel|Bilinmiyor)s"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4)))
-            addView(makeLink("yt-dlp Kılavuzu (OUTPUT TEMPLATE)", "https://github.com/yt-dlp/yt-dlp#output-template"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4)))
+            addView(makeLink("yt-dlp Kılavuzu (OUTPUT TEMPLATE)", "https://github.com/yt-dlp/yt-dlp#output-template"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(6)))
 
             addView(
                 Ui.button(this@SettingsActivity, "Kaydet", Ui.Kind.FILLED) {
@@ -712,8 +726,54 @@ class SettingsActivity : AppCompatActivity() {
             addView(helper("İndirme geçmişini ve kayıtlarını temizler. Galerideki dosyalara dokunmaz."))
             addView(
                 Ui.button(this@SettingsActivity, "Geçmişi temizle", Ui.Kind.DANGER) {
-                    Store.clearHistory(this@SettingsActivity)
-                    toast("Geçmiş temizlendi")
+                    val dialog = Dialog(this@SettingsActivity)
+                    dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+                    dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+                    
+                    val cardBgColor = if (Ui.isDark(this@SettingsActivity)) Color.parseColor("#1C1C1E") else Color.parseColor("#F8F8FA")
+                    val borderClr = if (Ui.isDark(this@SettingsActivity)) Color.parseColor("#2C2C2E") else Color.parseColor("#E5E5EA")
+
+                    val rootLayout = LinearLayout(this@SettingsActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(d(20), d(20), d(20), d(20))
+                        background = Ui.shape(cardBgColor, d(24).toFloat(), borderClr, d(1))
+                        elevation = d(16).toFloat()
+                    }
+
+                    val titleView = Ui.text(this@SettingsActivity, "Geçmişi Temizle?", 18f, Ui.textClr(this@SettingsActivity), true)
+                    rootLayout.addView(titleView, Ui.lp(Ui.MATCH, Ui.WRAP, b = d(8)))
+
+                    val descView = Ui.text(this@SettingsActivity, "Tüm indirme kayıtları silinecektir. Galerideki dosyalarınıza dokunulmaz.", 13f, Ui.mutedClr(this@SettingsActivity), false)
+                    rootLayout.addView(descView, Ui.lp(Ui.MATCH, Ui.WRAP, b = d(24)))
+
+                    val buttonRow = LinearLayout(this@SettingsActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                    }
+                    
+                    val cancelBtn = Ui.button(this@SettingsActivity, "Vazgeç", Ui.Kind.TONAL) {
+                        dialog.dismiss()
+                    }.apply {
+                        val tonalBg = if (Ui.isDark(this@SettingsActivity)) Color.parseColor("#3A3A3C") else Color.parseColor("#E5E5EA")
+                        background = Ui.ripple(Ui.shape(tonalBg, 999f), 999f)
+                    }
+
+                    val clearBtn = Ui.button(this@SettingsActivity, "Temizle", Ui.Kind.DANGER) {
+                        Store.clearHistory(this@SettingsActivity)
+                        toast("Geçmiş temizlendi")
+                        dialog.dismiss()
+                    }.apply {
+                        background = Ui.ripple(Ui.shape(Ui.ERR, 999f), 999f)
+                        setTextColor(Color.WHITE)
+                    }
+
+                    buttonRow.addView(cancelBtn, Ui.lp(0, Ui.WRAP, 1f, r = d(8)))
+                    buttonRow.addView(clearBtn, Ui.lp(0, Ui.WRAP, 1f, l = d(8)))
+
+                    rootLayout.addView(buttonRow, Ui.lp(Ui.MATCH, Ui.WRAP))
+                    
+                    dialog.setContentView(rootLayout)
+                    dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.9).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+                    dialog.show()
                 },
                 Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12))
             )
@@ -721,7 +781,7 @@ class SettingsActivity : AppCompatActivity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(d(16), 0, d(16), 0)
+            setPadding(d(16), 0, d(16), d(96))
             clipToPadding = false
             addView(section("GENEL"), Ui.lp(Ui.WRAP, Ui.WRAP, b = d(8)))
             addView(genCard, Ui.lp(Ui.MATCH, Ui.WRAP))
@@ -735,22 +795,13 @@ class SettingsActivity : AppCompatActivity() {
             addView(historyCard, Ui.lp(Ui.MATCH, Ui.WRAP))
         }
 
-        val bottomSpacer = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d(75))
-        }
-        content.addView(bottomSpacer)
-
         val scroll = ScrollView(this).apply {
             isFillViewport = false
             clipToPadding = false
             addView(content)
         }
 
-        val header = Ui.header(
-            this, "Ayarlar",
-            Ui.iconButton(this, R.drawable.ic_arrow_back, "Geri") { finish() },
-            null
-        )
+        val header = Ui.header(this, "Ayarlar", null, null)
         mainContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.bg(this@SettingsActivity))
@@ -774,7 +825,7 @@ class SettingsActivity : AppCompatActivity() {
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
         ).apply {
-            setMargins(d(28), 0, d(28), d(20))
+            setMargins(0, 0, 0, d(24))
         }
 
         val scrollHandler = Handler(Looper.getMainLooper())

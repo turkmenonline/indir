@@ -32,6 +32,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.widget.TextViewCompat
 
 class MainActivity : AppCompatActivity() {
     private lateinit var input: EditText
@@ -39,7 +40,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mainContent: LinearLayout
     private lateinit var activeDownloadsContainer: LinearLayout
     private val currentIndex = 0
-    private var selectedQuality = Store.QUALITY_BEST
 
     private var activeDetailDialog: Dialog? = null
     private var activeDetailId: Long = -1L
@@ -59,7 +59,6 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Throwable) {}
         super.onCreate(savedInstanceState)
         Store.cleanupPendingDownloads(this)
-        selectedQuality = Store.videoQuality(this)
 
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -76,6 +75,9 @@ class MainActivity : AppCompatActivity() {
         input = Ui.field(this, "Gönderi linkini yapıştırın").apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             imeOptions = EditorInfo.IME_ACTION_GO
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_link, 0, 0, 0)
+            compoundDrawablePadding = Ui.dp(this@MainActivity, 10)
+            TextViewCompat.setCompoundDrawableTintList(this, ColorStateList.valueOf(Ui.hintClr(this@MainActivity)))
             setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_GO) {
                     start(text.toString())
@@ -83,27 +85,6 @@ class MainActivity : AppCompatActivity() {
                 } else false
             }
         }
-        val qualityButtonsHolder = FrameLayout(this)
-        fun updateQualityButtons() {
-            qualityButtonsHolder.removeAllViews()
-            val qualities = listOf(
-                Pair("En iyi", Store.QUALITY_BEST),
-                Pair("720p", Store.QUALITY_720P),
-                Pair("Ses", Store.QUALITY_AUDIO_ONLY)
-            )
-            val currentIndex = qualities.indexOfFirst { it.second == selectedQuality }.coerceAtLeast(0)
-            val titles = qualities.map { it.first }
-            val seg = Ui.segmentedControl(this@MainActivity, titles, currentIndex) { index ->
-                val qVal = qualities[index].second
-                if (selectedQuality != qVal) {
-                    selectedQuality = qVal
-                    updateQualityButtons()
-                }
-            }
-            qualityButtonsHolder.addView(seg, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
-        }
-        updateQualityButtons()
-
         val paste = Ui.button(this, "Yapıştır", Ui.Kind.TONAL) { pasteFromClipboard() }
         goButton = Ui.button(this, "İndir", Ui.Kind.FILLED) { start(input.text.toString()) }
         val buttons = LinearLayout(this).apply {
@@ -113,8 +94,7 @@ class MainActivity : AppCompatActivity() {
         }
         val inputCard = Ui.card(this).apply {
             addView(input, Ui.lp(Ui.MATCH, Ui.WRAP))
-            addView(qualityButtonsHolder, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12), b = d(12)))
-            addView(buttons, Ui.lp(Ui.MATCH, Ui.WRAP))
+            addView(buttons, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12)))
         }
 
         activeDownloadsContainer = LinearLayout(this).apply {
@@ -153,7 +133,7 @@ class MainActivity : AppCompatActivity() {
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
         ).apply {
-            setMargins(d(28), 0, d(28), d(20))
+            setMargins(0, 0, 0, d(24))
         }
 
         val root = FrameLayout(this).apply {
@@ -182,17 +162,22 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // 1. Ekrana dönüldüğü an kartı güncel duruma eşitle
         refreshLiveDownloadBox()
-        
-        // 2. Canlı dinleyiciyi tekrar bağla (böylece Geçmiş'ten dönülünce donmasın)
-        DownloadService.onStateChanged = {
-            runOnUiThread {
-                refreshLiveDownloadBox()
-            }
+    }
+
+    private val globalStateListener: () -> Unit = {
+        runOnUiThread {
+            refreshLiveDownloadBox()
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        DownloadService.addStateListener(globalStateListener)
+        refreshLiveDownloadBox()
+    }
+
     override fun onStop() {
-        DownloadService.onStateChanged = null
+        DownloadService.removeStateListener(globalStateListener)
         activeDetailDialog?.dismiss()
         activeDetailDialog = null
         activeDetailId = -1L
@@ -645,7 +630,7 @@ class MainActivity : AppCompatActivity() {
     private fun startDownload(url: String) {
         val i = Intent(this, DownloadService::class.java).apply {
             putExtra(DownloadService.EXTRA_URL, url)
-            putExtra("custom_quality", selectedQuality)
+            putExtra("custom_quality", Store.videoQuality(this@MainActivity))
         }
         startForegroundService(i)
         input.setText("")

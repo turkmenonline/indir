@@ -25,6 +25,7 @@ import androidx.core.net.toUri
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import java.io.File
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -57,6 +58,18 @@ class DownloadService : Service() {
         val cancelledTasks = ConcurrentHashMap.newKeySet<Long>()
         val runningTasks = ConcurrentHashMap.newKeySet<Long>()
         var onStateChanged: (() -> Unit)? = null
+        
+        private val stateListeners = Collections.newSetFromMap(ConcurrentHashMap<() -> Unit, Boolean>())
+        
+        fun addStateListener(listener: () -> Unit) { stateListeners.add(listener) }
+        fun removeStateListener(listener: () -> Unit) { stateListeners.remove(listener) }
+        
+        fun notifyGlobalStateChanged() {
+            onStateChanged?.invoke()
+            stateListeners.forEach { listener ->
+                try { listener.invoke() } catch (_: Throwable) {}
+            }
+        }
 
         private const val TAG = "DownloadService"
 
@@ -105,7 +118,7 @@ class DownloadService : Service() {
                 // işte de true döner ve indirmeyi durdurmaz, sadece kartı siler).
                 Log.d(TAG, "CANCEL queued id=$id")
                 activeDownloads.remove(id)
-                onStateChanged?.invoke()
+                notifyGlobalStateChanged()
             }
         }
     }
@@ -174,7 +187,7 @@ class DownloadService : Service() {
         val id = System.currentTimeMillis()
         val state = DownloadState(id, platform, url, -1, "Sırada", id)
         activeDownloads[id] = state
-        onStateChanged?.invoke()
+        notifyGlobalStateChanged()
 
         val future = executor.submit {
             runningTasks.add(id)
@@ -186,19 +199,19 @@ class DownloadService : Service() {
                     nm.cancel(1)
                     cancelledTasks.remove(id)
                     activeDownloads.remove(id)
-                    onStateChanged?.invoke()
+                    notifyGlobalStateChanged()
                     stopIfIdle()
                     return@submit
                 }
                 state.detail = "Hazırlanıyor..."
-                onStateChanged?.invoke()
+                notifyGlobalStateChanged()
                 process(id, url, customQuality, platform, state)
             } finally {
                 runningTasks.remove(id)
                 futures.remove(id)
                 cancelledTasks.remove(id)
                 activeDownloads.remove(id)
-                onStateChanged?.invoke()
+                notifyGlobalStateChanged()
                 if (pending.decrementAndGet() == 0) stopIfIdle()
             }
         }
@@ -216,7 +229,7 @@ class DownloadService : Service() {
             futures.clear()
             cancelledTasks.clear()
             runningTasks.clear()
-            onStateChanged?.invoke()
+            notifyGlobalStateChanged()
         }
     }
 
@@ -251,7 +264,7 @@ class DownloadService : Service() {
                     st.pct = p
                     st.detail = detail
                 }
-                onStateChanged?.invoke()
+                notifyGlobalStateChanged()
                 nm.notify(1, progressNotif(platform, detail, p))
             }, { cancelledTasks.contains(id) })
 
@@ -314,7 +327,7 @@ class DownloadService : Service() {
             nm.cancel(1)
             cancelledTasks.remove(id)
             activeDownloads.remove(id)
-            onStateChanged?.invoke()
+            notifyGlobalStateChanged()
             stopIfIdle()
             return
         }
@@ -325,7 +338,7 @@ class DownloadService : Service() {
         } else {
             Store.upsert(this, id, url, STATUS_INTERRUPTED, log.takeLast(3000))
         }
-        onStateChanged?.invoke()
+        notifyGlobalStateChanged()
         nm.cancel(1)
 
         val ok = success
