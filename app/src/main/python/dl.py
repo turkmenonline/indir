@@ -13,6 +13,7 @@ import ssl
 import sys
 import tarfile
 import time
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -407,6 +408,12 @@ def _gallery(task_id, url, dest, cookies, template, sink=None):
         lg = logging.getLogger(name)
         for h in list(lg.handlers):
             lg.removeHandler(h)
+    if "instagram.com/s/" in url and "?" in url:
+        parts = url.split("?", 1)
+        base = parts[0]
+        query = parts[1]
+        if "%3D" in query or "%26" in query or "%3d" in query or "%25" in query:
+            url = base + "?" + urllib.parse.unquote(query)
     args = ["gallery-dl", "-D", dest]
     if cookies:
         args += ["--cookies", cookies]

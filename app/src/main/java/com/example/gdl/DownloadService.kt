@@ -25,6 +25,7 @@ import androidx.core.net.toUri
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import java.io.File
+import java.net.URLDecoder
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -77,12 +78,21 @@ class DownloadService : Service() {
             var u = rawUrl.trim()
             try {
                 val uri = u.toUri()
-                val query = uri.query
-                if (!query.isNullOrEmpty()) {
-                    val params = query.split("&")
+                val encodedQuery = uri.encodedQuery
+                if (!encodedQuery.isNullOrEmpty()) {
+                    var queryText = encodedQuery
+                    if (!queryText.contains("=") && queryText.contains("%3D", ignoreCase = true)) {
+                        try {
+                            queryText = URLDecoder.decode(queryText, "UTF-8")
+                        } catch (_: Exception) {}
+                    }
+                    val params = queryText.split("&")
                     val filteredParams = params.filter { !it.startsWith("utm_", ignoreCase = true) }
-                    val newQuery = if (filteredParams.isNotEmpty()) filteredParams.joinToString("&") else ""
-                    val builder = uri.buildUpon().query(newQuery)
+                    val builder = uri.buildUpon().clearQuery()
+                    if (filteredParams.isNotEmpty()) {
+                        val newQuery = filteredParams.joinToString("&")
+                        builder.encodedQuery(newQuery)
+                    }
                     u = builder.build().toString()
                 }
             } catch (_: Exception) {}
