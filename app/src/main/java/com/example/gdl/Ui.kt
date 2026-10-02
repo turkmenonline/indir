@@ -12,11 +12,14 @@ import android.graphics.drawable.StateListDrawable
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.app.Activity
 import android.view.View
 import android.view.ViewOutlineProvider
+import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -26,7 +29,10 @@ import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.viewpager2.widget.ViewPager2
 import com.example.gdl.R
+import eightbitlab.com.blurview.BlurView
+import eightbitlab.com.blurview.RenderScriptBlur
 
 /** Kod ile çizilen ekranlar için güvenli dinamik renkler ve bileşenler. */
 object Ui {
@@ -110,6 +116,15 @@ object Ui {
             (v * c.resources.displayMetrics.density).toInt()
         } catch (_: Throwable) {
             v * 2
+        }
+    }
+
+    fun dp(c: Context?, v: Float): Int {
+        if (c == null) return (v * 2).toInt()
+        return try {
+            (v * c.resources.displayMetrics.density).toInt()
+        } catch (_: Throwable) {
+            (v * 2).toInt()
         }
     }
 
@@ -389,71 +404,118 @@ object Ui {
         c: Context,
         items: List<NavItem>,
         selectedIndex: Int,
+        viewPager: ViewPager2? = null,
         onSelect: (Int) -> Unit
-    ): LinearLayout {
+    ): BlurView {
         val isDarkTheme = isDark(c)
-        val glassBgColor = if (isDarkTheme) Color.parseColor("#CC1C1C22") else Color.parseColor("#F2FFFFFF")
-        val borderWhite = if (isDarkTheme) Color.parseColor("#50FFFFFF") else Color.parseColor("#25000000")
-        val strokeWidth = (1.5f * c.resources.displayMetrics.density).toInt()
         val pillRadius = 999f
 
-        return LinearLayout(c).apply {
+        val blurView = BlurView(c).apply {
+            outlineProvider = ViewOutlineProvider.BACKGROUND
+            clipToOutline = true
+            elevation = dp(c, 16).toFloat()
+            background = if (isDarkTheme) {
+                shape(Color.parseColor("#201C1C1E"), pillRadius, Color.parseColor("#45FFFFFF"), dp(c, 1.2f))
+            } else {
+                shape(Color.parseColor("#28FFFFFF"), pillRadius, Color.parseColor("#22000000"), dp(c, 1.2f))
+            }
+        }
+
+        val activity = c as? Activity
+        val rootView = activity?.window?.decorView?.findViewById<ViewGroup>(android.R.id.content)
+            ?: blurView
+
+        blurView.setupWith(rootView, RenderScriptBlur(c)).apply {
+            activity?.window?.decorView?.background?.let { setFrameClearDrawable(it) }
+            setBlurRadius(18f)
+            setBlurAutoUpdate(true)
+        }
+
+        val tabsRow = LinearLayout(c).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            val pV = dp(c, 6)
-            val pH = dp(c, 8)
-            setPadding(pH, pV, pH, pV)
-            background = shape(glassBgColor, pillRadius, borderWhite, strokeWidth)
-            elevation = dp(c, 16).toFloat()
-            outlineProvider = ViewOutlineProvider.BACKGROUND
+            setPadding(dp(c, 8), dp(c, 6), dp(c, 8), dp(c, 6))
+        }
 
-            items.forEachIndexed { index, item ->
-                val isSelected = (index == selectedIndex)
-                val activeColor = if (isDarkTheme) Color.parseColor("#0A84FF") else Color.parseColor("#007AFF")
-                val inactiveColor = if (isDarkTheme) Color.parseColor("#8E8E93") else Color.parseColor("#636366")
-                val fgColor = if (isSelected) activeColor else inactiveColor
+        val activeColor = if (isDarkTheme) Color.parseColor("#0A84FF") else Color.parseColor("#007AFF")
+        val inactiveColor = if (isDarkTheme) Color.parseColor("#8E8E93") else Color.parseColor("#3C3C43")
 
-                val sz = dp(c, 26)
-                val icon = ImageView(c).apply {
-                    setImageResource(item.iconRes)
-                    imageTintList = ColorStateList.valueOf(fgColor)
-                    scaleType = ImageView.ScaleType.FIT_CENTER
-                    layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
-                        gravity = Gravity.CENTER
-                    }
-                }
+        fun updateIcons(activeIndex: Int) {
+            for (i in 0 until tabsRow.childCount) {
+                val cell = tabsRow.getChildAt(i) as? ViewGroup
+                val icon = cell?.getChildAt(0) as? ImageView
+                val isSel = (i == activeIndex)
+                icon?.imageTintList = ColorStateList.valueOf(if (isSel) activeColor else inactiveColor)
 
-                val tabBg = if (isSelected) {
+                val cellBg = if (isSel) {
                     if (isDarkTheme) {
-                        shape(Color.parseColor("#38FFFFFF"), 999f, Color.parseColor("#60FFFFFF"), dp(c, 1))
+                        shape(Color.parseColor("#25FFFFFF"), 999f, Color.parseColor("#45FFFFFF"), dp(c, 1))
                     } else {
-                        shape(Color.parseColor("#20007AFF"), 999f, Color.parseColor("#40007AFF"), dp(c, 1))
+                        shape(Color.parseColor("#15007AFF"), 999f, Color.parseColor("#30007AFF"), dp(c, 1))
                     }
                 } else {
                     shape(Color.TRANSPARENT, 999f)
                 }
-
-                val cellWidth = dp(c, 78)
-                val cellHeight = dp(c, 48)
-
-                val tabCell = LinearLayout(c).apply {
-                    gravity = Gravity.CENTER
-                    background = ripple(tabBg, 999f)
-
-                    addView(icon)
-
-                    setOnClickListener {
-                        it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        onSelect(index)
-                    }
-                }
-
-                addView(tabCell, LinearLayout.LayoutParams(cellWidth, cellHeight).apply {
-                    gravity = Gravity.CENTER
-                    setMargins(dp(c, 4), 0, dp(c, 4), 0)
-                })
+                cell?.background = ripple(cellBg, 999f)
             }
         }
+
+        items.forEachIndexed { index, item ->
+            val isSelected = (index == selectedIndex)
+            val fgColor = if (isSelected) activeColor else inactiveColor
+
+            val sz = dp(c, 26)
+            val icon = ImageView(c).apply {
+                setImageResource(item.iconRes)
+                imageTintList = ColorStateList.valueOf(fgColor)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                    gravity = Gravity.CENTER
+                }
+            }
+
+            val tabBg = if (isSelected) {
+                if (isDarkTheme) {
+                    shape(Color.parseColor("#25FFFFFF"), 999f, Color.parseColor("#45FFFFFF"), dp(c, 1))
+                } else {
+                    shape(Color.parseColor("#15007AFF"), 999f, Color.parseColor("#30007AFF"), dp(c, 1))
+                }
+            } else {
+                shape(Color.TRANSPARENT, 999f)
+            }
+
+            val cellWidth = dp(c, 76)
+            val cellHeight = dp(c, 48)
+
+            val tabCell = LinearLayout(c).apply {
+                gravity = Gravity.CENTER
+                background = ripple(tabBg, 999f)
+
+                addView(icon)
+
+                setOnClickListener {
+                    it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    onSelect(index)
+                }
+            }
+
+            tabsRow.addView(tabCell, LinearLayout.LayoutParams(cellWidth, cellHeight).apply {
+                gravity = Gravity.CENTER
+                setMargins(dp(c, 4), 0, dp(c, 4), 0)
+            })
+        }
+
+        blurView.addView(tabsRow, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+
+        if (viewPager != null) {
+            viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+                override fun onPageSelected(position: Int) {
+                    updateIcons(position)
+                }
+            })
+        }
+
+        return blurView
     }
 
     fun iosLargeTitle(c: Context, title: String): TextView {

@@ -41,6 +41,7 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("io.coil-kt:coil:2.6.0")
+    implementation("com.github.Dimezis:BlurView:version-2.0.4")
     implementation(platform("androidx.compose:compose-bom:2024.10.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
