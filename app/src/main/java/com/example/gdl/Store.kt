@@ -352,4 +352,37 @@ object Store {
         }
         return domains.toList()
     }
+
+    fun isCookieEnabled(c: Context, domain: String): Boolean {
+        return prefs(c).getBoolean("cookie_domain_$domain", true)
+    }
+
+    fun setCookieEnabled(c: Context, domain: String, enabled: Boolean) {
+        prefs(c).edit().putBoolean("cookie_domain_$domain", enabled).apply()
+    }
+
+    fun isCookieDomainEnabled(c: Context, domain: String): Boolean = isCookieEnabled(c, domain)
+    fun setCookieDomainEnabled(c: Context, domain: String, enabled: Boolean) = setCookieEnabled(c, domain, enabled)
+
+    fun getCookieDisplayName(domain: String): String {
+        val d = domain.lowercase()
+        return when {
+            d.contains("instagram") -> "Instagram"
+            d.contains("youtube") || d.contains("youtu.be") -> "YouTube"
+            d.contains("tiktok") -> "TikTok"
+            d.contains("twitter") || d.contains("x.com") -> "X"
+            d.contains("pinterest") -> "Pinterest"
+            d.contains("reddit") -> "Reddit"
+            d.contains("facebook") || d.contains("fb.watch") -> "Facebook"
+            d.contains("twitch") -> "Twitch"
+            d.contains("spotify") -> "Spotify"
+            d.contains("soundcloud") -> "SoundCloud"
+            d.contains("vimeo") -> "Vimeo"
+            else -> {
+                val parts = d.split(".")
+                val name = if (parts.size >= 2) parts[parts.size - 2] else parts[0]
+                name.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+            }
+        }
+    }
 }

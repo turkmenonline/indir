@@ -264,8 +264,29 @@ class DownloadService : Service() {
             var cookiePath = ""
             val cookies = File(filesDir, "cookies.txt")
             if (cookies.exists() && cookies.length() > 0) {
-                cookies.copyTo(cookieTmp, overwrite = true)
-                cookiePath = cookieTmp.absolutePath
+                val filteredLines = mutableListOf<String>()
+                cookies.forEachLine { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.isEmpty() || (trimmed.startsWith("#") && !trimmed.startsWith("#HttpOnly_", ignoreCase = true))) {
+                        filteredLines.add(line)
+                    } else {
+                        val parts = if (trimmed.contains("\t")) trimmed.split("\t") else trimmed.split(Regex("\\s+"))
+                        if (parts.isNotEmpty()) {
+                            val rawDomain = parts[0]
+                            val cleanedDomain = Store.cleanCookieDomain(rawDomain)
+                            if (Store.isCookieDomainEnabled(this, cleanedDomain)) {
+                                filteredLines.add(line)
+                            }
+                        } else {
+                            filteredLines.add(line)
+                        }
+                    }
+                }
+                val hasCookieData = filteredLines.any { it.trim().isNotEmpty() && !it.trim().startsWith("#") }
+                if (hasCookieData) {
+                    cookieTmp.writeText(filteredLines.joinToString("\n"))
+                    cookiePath = cookieTmp.absolutePath
+                }
             }
             val sink = ProgressSink({ p, detail ->
                 if (cancelledTasks.contains(id)) {

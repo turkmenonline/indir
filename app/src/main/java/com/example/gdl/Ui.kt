@@ -10,6 +10,15 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.graphics.drawable.StateListDrawable
 import android.util.TypedValue
+import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.util.AttributeSet
+import android.view.MotionEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.animation.PathInterpolator
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.app.Activity
@@ -398,6 +407,13 @@ object Ui {
         }
     }
 
+    /** iOS 26 tarzı açma/kapama düğmesi. Dinleyici yalnızca kullanıcı dokunuşunda çağrılır. */
+    fun iosSwitch(c: Context, checked: Boolean, onChange: (Boolean) -> Unit): IosSwitch =
+        IosSwitch(c).apply {
+            isChecked = checked
+            setOnCheckedChangeListener(onChange)
+        }
+
     data class NavItem(val title: String, val iconRes: Int)
 
     fun floatingNavBar(
@@ -527,5 +543,171 @@ object Ui {
             letterSpacing = -0.02f
             gravity = Gravity.START
         }
+    }
+}
+
+
+/**
+ * iOS 26 tarzı açma/kapama düğmesi (kendi çizen View).
+ * Geniş "hap" kulp, ince kenar çizgisi, yumuşak gölge; basılı tutunca kulp genişler.
+ * Açık: yeşil iz (#34C759), kapalı: koyu/açık temaya göre gri iz.
+ *
+ *   val sw = Ui.iosSwitch(context, checked = true) { checked -> ... }
+ *   sw.isChecked = false   // koddan ayarlama dinleyiciyi TETİKLEMEZ
+ */
+class IosSwitch @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null
+) : View(context, attrs) {
+
+    private val density = resources.displayMetrics.density
+    private fun px(v: Float): Float = v * density
+
+    private val trackW = px(66f)
+    private val trackH = px(30f)
+    private val margin = px(2.5f)
+    private val thumbW = px(40f)
+    private val thumbWPressed = px(46f)
+
+    private val onColor = Color.parseColor("#34C759")
+    private val offColorDark = Color.parseColor("#39393D")
+    private val offColorLight = Color.parseColor("#E9E9EA")
+
+    private val evaluator = ArgbEvaluator()
+    private val rect = RectF()
+
+    private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val thumbPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        setShadowLayer(px(2.5f), 0f, px(1f), Color.argb(60, 0, 0, 0))
+    }
+    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = px(0.8f)
+        color = Color.argb(46, 0, 0, 0)
+    }
+
+    private var checkedState = false
+    private var progress = 0f   // 0 = kapalı, 1 = açık
+    private var press = 0f      // 0 = bırakıldı, 1 = basılı
+
+    private var progressAnim: ValueAnimator? = null
+    private var pressAnim: ValueAnimator? = null
+    private var listener: ((Boolean) -> Unit)? = null
+
+    init {
+        isClickable = true
+        isFocusable = true
+        // setShadowLayer yazılım katmanı ister
+        setLayerType(LAYER_TYPE_SOFTWARE, null)
+    }
+
+    /** Koddan ayarlama: animasyonsuz, dinleyiciyi çağırmaz. */
+    var isChecked: Boolean
+        get() = checkedState
+        set(value) {
+            checkedState = value
+            progressAnim?.cancel()
+            progress = if (value) 1f else 0f
+            invalidate()
+        }
+
+    /** Dinleyici yalnızca kullanıcı dokunuşunda çağrılır. */
+    fun setOnCheckedChangeListener(l: ((Boolean) -> Unit)?) {
+        listener = l
+    }
+
+    override fun setEnabled(enabled: Boolean) {
+        super.setEnabled(enabled)
+        alpha = if (enabled) 1f else 0.4f
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        setMeasuredDimension(trackW.toInt(), trackH.toInt())
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+
+        val off = if (Ui.isDark(context)) offColorDark else offColorLight
+        trackPaint.color = evaluator.evaluate(progress, off, onColor) as Int
+        rect.set(0f, 0f, w, h)
+        canvas.drawRoundRect(rect, h / 2f, h / 2f, trackPaint)
+
+        val tw = thumbW + (thumbWPressed - thumbW) * press
+        val th = h - 2f * margin
+        val minLeft = margin
+        val maxLeft = w - margin - tw
+        val left = minLeft + (maxLeft - minLeft) * progress
+        rect.set(left, margin, left + tw, margin + th)
+        canvas.drawRoundRect(rect, th / 2f, th / 2f, thumbPaint)
+        canvas.drawRoundRect(rect, th / 2f, th / 2f, strokePaint)
+    }
+
+    private fun animateProgress(target: Float) {
+        progressAnim?.cancel()
+        progressAnim = ValueAnimator.ofFloat(progress, target).apply {
+            duration = 320
+            interpolator = PathInterpolator(0.2f, 0.9f, 0.25f, 1f)
+            addUpdateListener {
+                progress = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    private fun animatePress(target: Float) {
+        pressAnim?.cancel()
+        pressAnim = ValueAnimator.ofFloat(press, target).apply {
+            duration = 140
+            interpolator = PathInterpolator(0.2f, 0.9f, 0.25f, 1f)
+            addUpdateListener {
+                press = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!isEnabled) return false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                // ScrollView içinde dikey kaydırma bizi iptal etmesin
+                parent?.requestDisallowInterceptTouchEvent(true)
+                animatePress(1f)
+            }
+            MotionEvent.ACTION_UP -> {
+                animatePress(0f)
+                val inside = event.x >= 0f && event.x <= width && event.y >= 0f && event.y <= height
+                if (inside) performClick()
+            }
+            MotionEvent.ACTION_CANCEL -> animatePress(0f)
+        }
+        return true
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        checkedState = !checkedState
+        animateProgress(if (checkedState) 1f else 0f)
+        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        listener?.invoke(checkedState)
+        return true
+    }
+
+    override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        info.className = "android.widget.Switch"
+        info.isCheckable = true
+        info.isChecked = checkedState
+    }
+
+    override fun onDetachedFromWindow() {
+        progressAnim?.cancel()
+        pressAnim?.cancel()
+        super.onDetachedFromWindow()
     }
 }

@@ -35,12 +35,10 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var album: EditText
     private lateinit var galleryTemplateEdit: EditText
     private lateinit var ytdlpTemplateEdit: EditText
-    private lateinit var cookieBox: EditText
     private lateinit var status: TextView
     private lateinit var ytDlpVersionText: TextView
     private lateinit var galleryDlVersionText: TextView
-    private lateinit var domainBadgesLayout: LinearLayout
-    private lateinit var domainBadgesScroll: HorizontalScrollView
+    private lateinit var domainRowsLayout: LinearLayout
     private lateinit var mainContent: LinearLayout
     private val currentIndex = 2
 
@@ -71,22 +69,56 @@ class SettingsActivity : AppCompatActivity() {
             if (saved) Ui.OK_BG else Ui.fieldLine(this), d(1)
         )
 
-        if (::domainBadgesLayout.isInitialized) {
-            domainBadgesLayout.removeAllViews()
+        if (::domainRowsLayout.isInitialized) {
+            domainRowsLayout.removeAllViews()
             if (saved) {
                 val content = f.readText()
                 val domains = Store.parseCookieDomains(content)
                 if (domains.isNotEmpty()) {
-                    domainBadgesScroll.visibility = View.VISIBLE
-                    domains.forEach { domain ->
-                        val pill = Ui.pill(this, "✔ $domain", Ui.OK, Ui.OK_BG)
-                        domainBadgesLayout.addView(pill, Ui.lp(Ui.WRAP, Ui.WRAP, r = d(6)))
+                    domainRowsLayout.visibility = View.VISIBLE
+                    domains.forEachIndexed { index, domain ->
+                        val displayName = Store.getCookieDisplayName(domain)
+                        val row = LinearLayout(this).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            gravity = Gravity.CENTER_VERTICAL
+                            minimumHeight = d(52)
+                            setPadding(d(16), d(8), d(16), d(8))
+                            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                                setMargins(-d(16), 0, -d(16), 0)
+                            }
+
+                            val labelView = TextView(this@SettingsActivity).apply {
+                                text = displayName
+                                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                                setTextColor(Ui.textClr(this@SettingsActivity))
+                                typeface = Ui.font(this@SettingsActivity, bold = true)
+                                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                            }
+                            addView(labelView)
+
+                            val switchView = Ui.iosSwitch(this@SettingsActivity, Store.isCookieEnabled(this@SettingsActivity, domain)) { checked ->
+                                Store.setCookieEnabled(this@SettingsActivity, domain, checked)
+                                toast("$displayName çerez ${if (checked) "açık" else "kapalı"}")
+                            }
+                            addView(switchView, Ui.lp(Ui.WRAP, Ui.WRAP))
+                        }
+                        domainRowsLayout.addView(row)
+
+                        if (index < domains.size - 1) {
+                            val divider = View(this).apply {
+                                setBackgroundColor(if (Ui.isDark(this@SettingsActivity)) Color.parseColor("#15FFFFFF") else Color.parseColor("#15000000"))
+                                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, d(1)).apply {
+                                    setMargins(d(16), 0, 0, 0)
+                                }
+                            }
+                            domainRowsLayout.addView(divider)
+                        }
                     }
                 } else {
-                    domainBadgesScroll.visibility = View.GONE
+                    domainRowsLayout.visibility = View.GONE
                 }
             } else {
-                domainBadgesScroll.visibility = View.GONE
+                domainRowsLayout.visibility = View.GONE
             }
         }
     }
@@ -111,7 +143,6 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         f.writeText(finalContent.trimEnd() + "\n")
-        cookieBox.setText("")
         updateStatus()
         val domains = Store.parseCookieDomains(finalContent)
         val domainCount = domains.size
@@ -596,23 +627,12 @@ class SettingsActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_TEXT
             setText(Store.rawYtdlpTemplate(this@SettingsActivity))
         }
-        cookieBox = Ui.field(this, "cookies.txt içeriğini buraya yapıştırın").apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            minLines = 4
-            gravity = Gravity.TOP or Gravity.START
-        }
         status = Ui.text(this, "", 12f, Ui.mutedClr(this), true).apply {
             setPadding(d(10), d(4), d(10), d(4))
         }
 
-        domainBadgesLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        domainBadgesScroll = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            isFillViewport = false
-            addView(domainBadgesLayout)
+        domainRowsLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
         }
 
         updateStatus()
@@ -692,15 +712,19 @@ class SettingsActivity : AppCompatActivity() {
         val cookieButtons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(
-                Ui.button(this@SettingsActivity, "Kaydet", Ui.Kind.TONAL) { saveCookies(cookieBox.text.toString(), isMerge = true) },
-                Ui.lp(0, Ui.WRAP, 1f, r = d(4))
-            )
-            addView(
                 Ui.button(this@SettingsActivity, "Dosyadan aktar", Ui.Kind.TONAL) {
                     val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
                     i.addCategory(Intent.CATEGORY_OPENABLE)
                     i.type = "*/*"
                     startActivityForResult(i, 1)
+                },
+                Ui.lp(0, Ui.WRAP, 1f, r = d(4))
+            )
+            addView(
+                Ui.button(this@SettingsActivity, "Çerezi sil", Ui.Kind.DANGER) {
+                    cookieFile().delete()
+                    updateStatus()
+                    toast("Çerez silindi")
                 },
                 Ui.lp(0, Ui.WRAP, 1f, l = d(4))
             )
@@ -708,17 +732,8 @@ class SettingsActivity : AppCompatActivity() {
         val cookieCard = Ui.card(this).apply {
             addView(helper("Giriş isteyen siteler için cookies.txt (Netscape biçimi)"))
             addView(status, Ui.lp(Ui.WRAP, Ui.WRAP, t = d(12)))
-            addView(domainBadgesScroll, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(10)))
-            addView(cookieBox, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(10)))
+            addView(domainRowsLayout, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(10)))
             addView(cookieButtons, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12)))
-            addView(
-                Ui.button(this@SettingsActivity, "Çerezi sil", Ui.Kind.DANGER) {
-                    cookieFile().delete()
-                    updateStatus()
-                    toast("Çerez silindi")
-                },
-                Ui.lp(Ui.MATCH, Ui.WRAP, t = d(8))
-            )
         }
 
         // Kart 5 (GEÇMİŞ)
