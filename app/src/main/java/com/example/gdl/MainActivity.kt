@@ -15,6 +15,7 @@ import android.os.Handler
 import android.os.Looper
 import android.text.InputType
 import android.text.TextUtils
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -33,6 +34,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.widget.TextViewCompat
+import com.yausername.ffmpeg.FFmpeg
 
 class MainActivity : AppCompatActivity() {
     private lateinit var input: EditText
@@ -58,6 +60,12 @@ class MainActivity : AppCompatActivity() {
             Store.applyTheme(this)
         } catch (_: Throwable) {}
         super.onCreate(savedInstanceState)
+        try {
+            FFmpeg.getInstance().init(applicationContext)
+            Log.d("FFMPEG", "FFmpeg başarıyla başlatıldı.")
+        } catch (e: Exception) {
+            Log.e("FFMPEG", "FFmpeg başlatma hatası", e)
+        }
         Store.cleanupPendingDownloads(this)
 
         if (Build.VERSION.SDK_INT >= 33 &&

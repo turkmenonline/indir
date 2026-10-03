@@ -34,6 +34,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 dependencies {
@@ -42,6 +47,8 @@ dependencies {
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("io.coil-kt:coil:2.6.0")
     implementation("com.github.Dimezis:BlurView:version-2.0.4")
+    implementation("io.github.junkfood02.youtubedl-android:library:0.17.3")
+    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.17.3")
     implementation(platform("androidx.compose:compose-bom:2024.10.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")

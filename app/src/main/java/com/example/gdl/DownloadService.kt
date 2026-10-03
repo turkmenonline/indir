@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
@@ -283,8 +284,18 @@ class DownloadService : Service() {
             val quality = customQuality.takeIf { it.isNotEmpty() } ?: Store.videoQuality(this)
             val galleryTemplate = Store.galleryTemplate(this)
             val ytdlpTemplate = Store.ytdlpTemplate(this)
+            val nativeDir = File(applicationInfo.nativeLibraryDir)
+            Log.d("FFMPEG_FIX", "nativeDir: ${nativeDir.list()?.joinToString()}")
+            val ffmpegFile = File(nativeDir, "libffmpeg.so").takeIf { it.exists() }
+                ?: noBackupFilesDir.walkTopDown().firstOrNull { it.isFile && it.name == "libffmpeg.so" }
+            val ffmpegPath = ffmpegFile?.absolutePath ?: ""
+            // FFmpeg.init()'in açtığı libavcodec vb. kütüphanelerin klasörü
+            val ffmpegLibDir = noBackupFilesDir.walkTopDown()
+                .firstOrNull { it.isFile && it.name.startsWith("libavcodec") }
+                ?.parentFile?.absolutePath ?: ""
+            Log.d("FFMPEG_FIX", "ffmpegPath=$ffmpegPath libDir=$ffmpegLibDir")
             log = Python.getInstance().getModule("dl")
-                .callAttr("run", id.toString(), url, dir.absolutePath, cookiePath, galleryTemplate, ytdlpTemplate, sink, updatesPath, quality)
+                .callAttr("run", id.toString(), url, dir.absolutePath, cookiePath, galleryTemplate, ytdlpTemplate, sink, updatesPath, quality, ffmpegPath, ffmpegLibDir)
                 .toString()
 
             if (cancelledTasks.contains(id)) {

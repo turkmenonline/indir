@@ -1,4 +1,6 @@
 import ctypes
+import html as _html
+import re
 import socket
 import threading
 import weakref
@@ -10,6 +12,7 @@ import logging
 import os
 import shutil
 import ssl
+import subprocess
 import sys
 import tarfile
 import time
@@ -182,6 +185,35 @@ def get_versions_json(updates_dir=None):
     yt_ver = get_yt_dlp_version(updates_dir)
     gdl_ver = get_gallery_dl_version(updates_dir)
     return json.dumps({"yt_dlp": yt_ver, "gallery_dl": gdl_ver})
+
+
+def _ffmpeg_usable(path, lib_dir=""):
+    """ffmpeg gerçekten çalışıyor mu? (dosya var diye çalışır demek değil)"""
+    if not path or not os.path.exists(path):
+        return False, "dosya yok"
+    try:
+        os.chmod(path, 0o755)
+    except Exception:
+        pass
+    try:
+        # ffmpeg'in yanındaki .so kütüphanelerini (libavcodec vb.) bulabilsin
+        dirs = [os.path.dirname(os.path.abspath(path))]
+        if lib_dir and os.path.isdir(lib_dir):
+            dirs.insert(0, lib_dir)
+        old_ld = os.environ.get("LD_LIBRARY_PATH", "")
+        cur = old_ld.split(":") if old_ld else []
+        for d in reversed(dirs):
+            if d not in cur:
+                cur.insert(0, d)
+        os.environ["LD_LIBRARY_PATH"] = ":".join(cur)
+        r = subprocess.run([path, "-version"], capture_output=True, timeout=10,
+                           env=os.environ.copy())
+        if r.returncode == 0:
+            return True, ""
+        err = (r.stderr or b"").decode(errors="ignore")[:200]
+        return False, "çıkış kodu %s: %s" % (r.returncode, err)
+    except Exception as e:
+        return False, "%s: %s" % (type(e).__name__, e)
 
 
 def _create_ssl_context():
@@ -391,16 +423,22 @@ def _sanitize_filenames(dest):
                         pass
 
 
-def _gallery(task_id, url, dest, cookies, template, sink=None):
+def _gallery(task_id, url, dest, cookies, template, sink=None, ffmpeg_path="", ffmpeg_lib_dir=""):
     import gallery_dl
     from gallery_dl import config
+    ffmpeg_ok, _ffmpeg_why = _ffmpeg_usable(ffmpeg_path, ffmpeg_lib_dir)
     try:
         config.clear()
         config.load()
         config.set(('extractor',), 'timeout', 5)
         config.set(('downloader',), 'timeout', 5)
-        # ffmpeg yok: ses+video ayri inip birlesmiyor -> sesli tek dosya iste
-        config.set(('downloader', 'ytdl'), 'format', 'b[acodec!=none][vcodec!=none]/b')
+        config.set(('extractor', 'instagram'), 'ytdl', False)
+        if ffmpeg_ok:
+            config.set(('downloader', 'ytdl'), 'raw-options', {'ffmpeg_location': ffmpeg_path})
+            config.set(('downloader', 'ytdl'), 'format', 'bestvideo+bestaudio/best')
+            config.set(('downloader', 'ytdl'), 'merge-output-format', 'mp4')
+        else:
+            config.set(('downloader', 'ytdl'), 'format', 'b[acodec!=none][vcodec!=none]/b')
         config.set(('extractor', 'instagram'), 'videos', True)
     except Exception:
         pass
@@ -414,7 +452,7 @@ def _gallery(task_id, url, dest, cookies, template, sink=None):
         query = parts[1]
         if "%3D" in query or "%26" in query or "%3d" in query or "%25" in query:
             url = base + "?" + urllib.parse.unquote(query)
-    args = ["gallery-dl", "-D", dest]
+    args = ["gallery-dl", "-D", dest, "-o", "instagram.ytdl=false", "-o", "ytdl=false"]
     if cookies:
         args += ["--cookies", cookies]
     if template:
@@ -489,7 +527,7 @@ class _Log:
         self.lines.append("hata: %s" % msg)
 
 
-def _ytdlp(task_id, url, dest, cookies, template, sink, quality="best"):
+def _ytdlp(task_id, url, dest, cookies, template, sink, quality="best", ffmpeg_path="", ffmpeg_lib_dir=""):
     import yt_dlp
     limiter = RateLimiter(0.5)
     tid_str = str(task_id)
@@ -511,7 +549,7 @@ def _ytdlp(task_id, url, dest, cookies, template, sink, quality="best"):
                     pct = -1
 
             speed = d.get('speed') or 0
-            eta = d.get('eta') or 0
+            eta = int(d.get('eta') or 0)
 
             speed_str = f"{speed / (1024 * 1024):.1f} MB/s" if speed > 0 else ""
             eta_str = f"{eta} sn" if eta > 0 else ""
@@ -528,17 +566,19 @@ def _ytdlp(task_id, url, dest, cookies, template, sink, quality="best"):
 
     log = _Log()
     if quality == "720p":
-        fmt = 'best[height<=720][ext=mp4]/best[height<=720]/best'
+        fmt = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best'
     elif quality == "audio_only":
         fmt = 'bestaudio[ext=m4a]/bestaudio/best'
     else:
-        fmt = 'best[ext=mp4]/best'
+        fmt = 'bestvideo+bestaudio/best'
 
-    outtmpl = os.path.join(dest, template) if template else os.path.join(dest, "%(title).80B [%(id)s].%(ext)s")
+    outtmpl = os.path.join(dest, template) if template else os.path.join(dest, "%(title)s_%(id)s.%(ext)s")
 
     ydl_opts = {
         "outtmpl": outtmpl,
         "format": fmt,
+        "merge_output_format": "mp4",
+        "format_sort": ['res', 'fps', 'codec:h264'],
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
@@ -548,13 +588,30 @@ def _ytdlp(task_id, url, dest, cookies, template, sink, quality="best"):
     }
     if cookies:
         ydl_opts["cookiefile"] = cookies
+    ffmpeg_ok, ffmpeg_why = _ffmpeg_usable(ffmpeg_path, ffmpeg_lib_dir)
+    single_fmt = 'best[vcodec!=none][acodec!=none]/best'
+    if ffmpeg_ok:
+        ydl_opts['ffmpeg_location'] = ffmpeg_path
+        log.lines.append("bilgi: ffmpeg aktif")
+    else:
+        # ffmpeg yok ya da çalışmıyor: birleştirme gerektirmeyen tek parça formata düş
+        log.warning("ffmpeg kullanılamıyor (%s), tek parça formata düşülüyor" % (ffmpeg_why if ffmpeg_path else "yol boş"))
+        ydl_opts['format'] = single_fmt
+        ydl_opts.pop("merge_output_format", None)
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
     except Exception as e:
         err_msg = str(e)
-        if "output template" in err_msg.lower() or "template" in err_msg.lower() or "invalid" in err_msg.lower() or "outtmpl" in err_msg.lower():
+        if "ffmpeg is not installed" in err_msg.lower() or "ffmpeg not found" in err_msg.lower():
+            log.warning("ffmpeg hatası, tek parça formatla yeniden deneniyor...")
+            ydl_opts["format"] = single_fmt
+            ydl_opts.pop("merge_output_format", None)
+            ydl_opts.pop("ffmpeg_location", None)
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        elif "output template" in err_msg.lower() or "template" in err_msg.lower() or "invalid" in err_msg.lower() or "outtmpl" in err_msg.lower():
             log.warning(f"Şablon hatası ({err_msg}), varsayılan şablon ile yeniden deneniyor...")
             ydl_opts["outtmpl"] = os.path.join(dest, "%(title).80B [%(id)s].%(ext)s")
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -564,10 +621,220 @@ def _ytdlp(task_id, url, dest, cookies, template, sink, quality="best"):
     return "\n".join(log.lines) or "tamam"
 
 
-def _run_tools(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, quality):
+_IG_UA = ("Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
+_IG_CODE_RE = re.compile(r"instagram\.com/(?:[A-Za-z0-9_.]+/)?(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)")
+
+
+def _ig_unescape(s):
+    s = s.replace("\\u0026", "&").replace("\\/", "/")
+    s = s.replace("\\", "")
+    return _html.unescape(s)
+
+
+_IG_BOT_UA = "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"
+
+
+def _ig_fetch(page_url, referer="https://www.instagram.com/", ua=None):
+    req = urllib.request.Request(page_url, headers={
+        "User-Agent": ua or _IG_UA,
+        "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": referer,
+    })
+    with urllib.request.urlopen(req, context=_create_ssl_context(), timeout=20) as resp:
+        final = resp.geturl()
+        body = resp.read().decode("utf-8", errors="ignore")
+    return final, body
+
+
+def _ig_image_urls(page):
+    """Sayfadan fotoğraf adreslerini çıkarır (tam boy öncelikli)."""
+    found = []
+
+    def add(u):
+        u = _ig_unescape(u).strip()
+        if not u.startswith("http"):
+            return
+        host = urllib.parse.urlparse(u).netloc
+        if "cdninstagram" not in host and "fbcdn" not in host:
+            return
+        key = urllib.parse.urlparse(u).path
+        if all(urllib.parse.urlparse(x).path != key for x in found):
+            found.append(u)
+
+    # 1) JSON içindeki tam boy adresler
+    for m in re.finditer(r'display_url\\*"\s*:\s*\\*"(.+?)\\*"', page):
+        add(m.group(1))
+    # 2) embed sayfasındaki <img class="EmbeddedMediaImage">
+    #    (JSON'dan tam boy geldiyse küçük sürümü ikinci dosya olarak ekleme)
+    if not found:
+        for tag in re.findall(r"<img\b[^>]*>", page):
+            if "EmbeddedMediaImage" in tag:
+                m = re.search(r'\bsrc="([^"]+)"', tag)
+                if m:
+                    add(m.group(1))
+    # 3) son çare: og:image
+    if not found:
+        for m in re.finditer(r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"', page):
+            add(m.group(1))
+    return found
+
+
+def _ig_og_image(page):
+    """<meta property="og:image" content="..."> adresini döndürür (öznitelik sırası fark etmez)."""
+    for tag in re.findall(r"<meta\b[^>]*>", page):
+        if re.search(r'property\s*=\s*["\']og:image["\']', tag):
+            m = re.search(r'content\s*=\s*["\']([^"\']+)["\']', tag)
+            if m:
+                u = _ig_unescape(m.group(1)).strip()
+                host = urllib.parse.urlparse(u).netloc
+                if u.startswith("http") and ("cdninstagram" in host or "fbcdn" in host):
+                    return u
+    return None
+
+
+def _ig_scan_cdn(page, log=None):
+    """Sayfadaki TÜM cdninstagram/fbcdn görsel adreslerini tarar.
+    Profil resimlerini eler, aynı fotoğrafın en büyük sürümünü seçer."""
+    txt = _ig_unescape(page)
+    cands = []
+    for m in re.finditer(r"https?://[^\s\"'<>()]+", txt):
+        u = m.group(0).rstrip(",;")
+        host = urllib.parse.urlparse(u).netloc
+        if "cdninstagram" not in host and "fbcdn" not in host:
+            continue
+        path = urllib.parse.urlparse(u).path
+        low = path.lower()
+        if not (low.endswith((".jpg", ".jpeg", ".webp", ".png")) or ".jpg" in low):
+            continue
+        if "2885-19" in path or "/t51.2885-19/" in path:  # profil resmi
+            continue
+        if "static" in host or "/rsrc.php" in path:
+            continue
+        cands.append(u)
+
+    def dim(u):
+        mm = re.search(r"[sp](\d{2,4})x\d{2,4}", u)
+        return int(mm.group(1)) if mm else 99999  # boyut belirtilmemiş = orijinal
+
+    best = {}
+    order = []
+    for u in cands:
+        key = os.path.basename(urllib.parse.urlparse(u).path)
+        if key not in best:
+            best[key] = u
+            order.append(key)
+        elif dim(u) > dim(best[key]):
+            best[key] = u
+    res = [best[k] for k in order]
+    if log is not None:
+        log.append("  CDN adayı: %d, benzersiz: %d" % (len(cands), len(res)))
+        for u in res[:4]:
+            log.append("  aday: %s (boyut %s)" % (u[:110], dim(u)))
+        if not res:
+            log.append("  sayfa ipuçları: img=%d cdninstagram=%d display_url=%d video=%d Embedded=%d" % (
+                page.count("<img"), page.count("cdninstagram"), page.count("display_url"),
+                page.count("video"), page.count("Embedded")))
+            log.append("  anahtarlar: og:image=%d scontent=%d image_versions=%d shortcode=%d graphql=%d data-sjs=%d" % (
+                page.count("og:image"), page.count("scontent"), page.count("image_versions"),
+                page.count("shortcode"), page.count("graphql"), page.count("data-sjs")))
+            t = re.search(r"<title>(.{0,80})", page)
+            if t:
+                log.append("  başlık: %s" % t.group(1).replace("\n", " "))
+            k = page.find("og:image")
+            if k >= 0:
+                log.append("  og:image çevresi: %s" % page[max(0, k - 20):k + 220].replace("\n", " "))
+            k = page.find("scontent")
+            if k >= 0:
+                log.append("  ilk scontent: %s" % page[max(0, k - 60):k + 200].replace("\n", " "))
+    return res
+
+
+def _ig_embed(task_id, url, dest, sink=None):
+    """Giriş/çerez olmadan, herkese açık Instagram gönderisinin fotoğrafını embed sayfasından alır."""
+    m = _IG_CODE_RE.search(url)
+    if not m:
+        return "gönderi kodu bulunamadı"
+    code = m.group(1)
+    log = ["gönderi kodu: %s" % code]
+    images = []
+    attempts = [("embed/captioned/", None), ("embed/", None), ("", _IG_BOT_UA)]
+    for suffix, ua in attempts:
+        page_url = "https://www.instagram.com/p/%s/%s" % (code, suffix)
+        suffix = (suffix or "ana sayfa (önizleme botu)")
+        try:
+            final, page = _ig_fetch(page_url, ua=ua)
+        except Exception as e:
+            log.append("%s -> %s: %s" % (suffix, type(e).__name__, e))
+            continue
+        log.append("%s -> %d bayt, son adres: %s" % (suffix, len(page), final[:80]))
+        if "accounts/login" in final:
+            log.append("  giriş sayfasına yönlendirildi")
+            continue
+        if ua:
+            # Önizleme botu sayfası: gönderinin kendi görseli og:image'dır.
+            # Sayfadaki diğer görseller "benzer gönderiler" küçük resimleridir, alınmaz.
+            # Öncelik: boyut parametresi olmayan (orijinal çözünürlüklü) ilk adres.
+            # og:image yalnızca 640x640 kırpılmış önizlemedir, en son çare.
+            cands = _ig_scan_cdn(page, log)
+            full = [u for u in cands if not re.search(r"[sp]\d{2,4}x\d{2,4}", u)]
+            log.append("  orijinal boyutlu aday: %d / %d" % (len(full), len(cands)))
+            if full:
+                images = full[:20]  # carousel: sayfadaki tüm orijinal boyutlu görseller (Instagram üst sınırı 20)
+            else:
+                og = _ig_og_image(page)
+                images = [og] if og else cands[:1]
+                if images:
+                    log.append("  uyarı: orijinal bulunamadı, düşük çözünürlüklü önizleme alınacak")
+        else:
+            images = _ig_scan_cdn(page, log) or _ig_image_urls(page)
+        log.append("  bulunan görsel: %d" % len(images))
+        if images:
+            break
+    if not images:
+        return "\n".join(log) + "\nfotoğraf adresi bulunamadı"
+
+    os.makedirs(dest, exist_ok=True)
+    saved = 0
+    for i, img in enumerate(images, 1):
+        if str(task_id) in cancelled_ids:
+            raise CancelledDownload("İptal edildi")
+        path = urllib.parse.urlparse(img).path
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in (".jpg", ".jpeg", ".png", ".webp"):
+            ext = ".jpg"
+        name = "instagram_%s%s%s" % (code, ("_%d" % i) if len(images) > 1 else "", ext)
+        target = os.path.join(dest, name)
+        try:
+            if sink:
+                sink.updateProgress(-1, "Fotoğraf indiriliyor (%d/%d)" % (i, len(images)))
+            req = urllib.request.Request(img, headers={"User-Agent": _IG_UA, "Referer": "https://www.instagram.com/"})
+            with urllib.request.urlopen(req, context=_create_ssl_context(), timeout=30) as resp, open(target, "wb") as out:
+                shutil.copyfileobj(resp, out)
+            size = os.path.getsize(target)
+            if size < 2048:  # hata sayfası / boş cevap
+                os.remove(target)
+                log.append("%s çok küçük (%d bayt), atlandı" % (name, size))
+            else:
+                saved += 1
+                log.append("%s kaydedildi (%.0f KB)" % (name, size / 1024.0))
+        except Exception as e:
+            log.append("%s indirilemedi: %s: %s" % (name, type(e).__name__, e))
+            try:
+                if os.path.exists(target):
+                    os.remove(target)
+            except Exception:
+                pass
+    log.append("toplam %d/%d fotoğraf" % (saved, len(images)))
+    return "\n".join(log)
+
+
+def _run_tools(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, quality, ffmpeg_path="", ffmpeg_lib_dir=""):
     tid_str = str(task_id)
     _tl.task_id = tid_str
-    if any(d in url for d in YT_FIRST):
+    is_ig_video = "instagram.com" in url and any(p in url for p in ["/reel/", "/reels/", "/p/", "/tv/"])
+    if any(d in url for d in YT_FIRST) or is_ig_video:
         order = ["ytdlp", "gallery"]
     else:
         order = ["gallery", "ytdlp"]
@@ -577,14 +844,25 @@ def _run_tools(task_id, url, out_dir, cookies, gallery_template, ytdlp_template,
             raise CancelledDownload("İptal edildi")
         try:
             if tool == "gallery":
-                out = _gallery(task_id, url, out_dir, cookies, gallery_template, sink)
+                out = _gallery(task_id, url, out_dir, cookies, gallery_template, sink, ffmpeg_path, ffmpeg_lib_dir)
             else:
-                out = _ytdlp(task_id, url, out_dir, cookies, ytdlp_template, sink, quality)
+                out = _ytdlp(task_id, url, out_dir, cookies, ytdlp_template, sink, quality, ffmpeg_path, ffmpeg_lib_dir)
         except Exception as e:
             out = "%s: %s" % (type(e).__name__, e)
         parts.append("[%s]\n%s" % (tool, out.strip()))
         if _has_files(out_dir):
             break
+    # Yedek: Instagram gönderisi iki araçla da inmediyse (genelde giriş isteyen fotoğraf),
+    # çerezsiz embed sayfasından fotoğrafı almayı dene.
+    if (not _has_files(out_dir) and "instagram.com" in url and _IG_CODE_RE.search(url)
+            and tid_str not in cancelled_ids):
+        try:
+            out = _ig_embed(task_id, url, out_dir, sink)
+        except CancelledDownload:
+            raise
+        except Exception as e:
+            out = "%s: %s" % (type(e).__name__, e)
+        parts.append("[embed]\n%s" % out.strip())
     _sanitize_filenames(out_dir)
     return "\n\n".join(parts)
 
@@ -604,7 +882,7 @@ def _hard_stop(tid_str, w):
 CANCEL_RESULT = "[iptal]\nKullanıcı tarafından iptal edildi"
 
 
-def run(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, updates_dir=None, quality="best"):
+def run(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, updates_dir=None, quality="best", ffmpeg_path="", ffmpeg_lib_dir=""):
     tid_str = str(task_id)
     if updates_dir:
         setup_updates_path(updates_dir)
@@ -612,7 +890,7 @@ def run(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, 
 
     def work():
         try:
-            result["out"] = _run_tools(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, quality)
+            result["out"] = _run_tools(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, quality, ffmpeg_path, ffmpeg_lib_dir)
         except BaseException as e:
             result["err"] = e
 
