@@ -17,6 +17,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
@@ -35,7 +36,6 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var album: EditText
     private lateinit var galleryTemplateEdit: EditText
     private lateinit var ytdlpTemplateEdit: EditText
-    private lateinit var status: TextView
     private lateinit var ytDlpVersionText: TextView
     private lateinit var galleryDlVersionText: TextView
     private lateinit var domainRowsLayout: LinearLayout
@@ -62,12 +62,6 @@ class SettingsActivity : AppCompatActivity() {
     private fun updateStatus() {
         val f = cookieFile()
         val saved = f.exists() && f.length() > 0
-        status.text = if (saved) "Kayıtlı · ${f.length()} bayt" else "Kayıtlı çerez yok"
-        status.setTextColor(if (saved) Ui.OK else Ui.mutedClr(this))
-        status.background = Ui.shape(
-            if (saved) Ui.OK_BG else Ui.bg(this), d(50).toFloat(),
-            if (saved) Ui.OK_BG else Ui.fieldLine(this), d(1)
-        )
 
         if (::domainRowsLayout.isInitialized) {
             domainRowsLayout.removeAllViews()
@@ -627,10 +621,6 @@ class SettingsActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_TEXT
             setText(Store.rawYtdlpTemplate(this@SettingsActivity))
         }
-        status = Ui.text(this, "", 12f, Ui.mutedClr(this), true).apply {
-            setPadding(d(10), d(4), d(10), d(4))
-        }
-
         domainRowsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -722,18 +712,123 @@ class SettingsActivity : AppCompatActivity() {
             )
             addView(
                 Ui.button(this@SettingsActivity, "Çerezi sil", Ui.Kind.DANGER) {
-                    cookieFile().delete()
-                    updateStatus()
-                    toast("Çerez silindi")
+                    val f = cookieFile()
+                    if (!f.exists() || f.length() == 0L) {
+                        toast("Kayıtlı çerez yok")
+                        return@button
+                    }
+
+                    val dialog = Dialog(this@SettingsActivity)
+                    dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+                    dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+                    
+                    val cardBgColor = if (Ui.isDark(this@SettingsActivity)) Color.parseColor("#1E1E22") else Color.parseColor("#F8F8FA")
+                    val borderClr = if (Ui.isDark(this@SettingsActivity)) Color.parseColor("#2C2C2E") else Color.parseColor("#E5E5EA")
+
+                    val rootLayout = LinearLayout(this@SettingsActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(d(20), d(20), d(20), d(20))
+                        background = Ui.shape(cardBgColor, d(20).toFloat(), borderClr, d(1))
+                        elevation = d(16).toFloat()
+                    }
+
+                    val titleView = Ui.text(this@SettingsActivity, "Çerezleri Sil", 18f, Ui.textClr(this@SettingsActivity), true)
+                    rootLayout.addView(titleView, Ui.lp(Ui.MATCH, Ui.WRAP, b = d(4)))
+
+                    val descView = Ui.text(this@SettingsActivity, "Kaldırmak istediğiniz çerezleri seçin:", 14f, Ui.mutedClr(this@SettingsActivity), false)
+                    rootLayout.addView(descView, Ui.lp(Ui.MATCH, Ui.WRAP, b = d(16)))
+
+                    val checkboxes = mutableMapOf<String, CheckBox>()
+                    val checkboxContainer = LinearLayout(this@SettingsActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                    }
+
+                    val content = f.readText()
+                    val domains = Store.parseCookieDomains(content)
+                    domains.forEach { domain ->
+                        val displayName = Store.getCookieDisplayName(domain)
+                        val cb = CheckBox(this@SettingsActivity).apply {
+                            text = displayName
+                            isChecked = true
+                            setTextColor(Ui.textClr(this@SettingsActivity))
+                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                        }
+                        checkboxes[domain] = cb
+                        checkboxContainer.addView(cb, Ui.lp(Ui.MATCH, Ui.WRAP, b = d(6)))
+                    }
+
+                    rootLayout.addView(checkboxContainer, Ui.lp(Ui.MATCH, Ui.WRAP, b = d(20)))
+
+                    val buttonRow = LinearLayout(this@SettingsActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                    }
+                    
+                    val cancelBtn = Ui.button(this@SettingsActivity, "Vazgeç", Ui.Kind.TONAL) {
+                        dialog.dismiss()
+                    }.apply {
+                        val tonalBg = if (Ui.isDark(this@SettingsActivity)) Color.parseColor("#333338") else Color.parseColor("#E5E5EA")
+                        background = Ui.ripple(Ui.shape(tonalBg, 999f), 999f)
+                    }
+
+                    val deleteBtn = Ui.button(this@SettingsActivity, "Sil", Ui.Kind.DANGER) {
+                        val selectedDomains = checkboxes.filter { it.value.isChecked }.keys
+                        if (selectedDomains.isNotEmpty()) {
+                            val allDomains = checkboxes.keys
+                            if (selectedDomains.containsAll(allDomains)) {
+                                cookieFile().delete()
+                                updateStatus()
+                                toast("Çerezler silindi")
+                            } else {
+                                val currentContent = cookieFile().readText()
+                                val remainingLines = mutableListOf<String>()
+                                currentContent.lineSequence().forEach { line ->
+                                    val trimmed = line.trim()
+                                    if (trimmed.isEmpty() || (trimmed.startsWith("#") && !trimmed.startsWith("#HttpOnly_", ignoreCase = true))) {
+                                        remainingLines.add(line)
+                                    } else {
+                                        val parts = if (trimmed.contains("\t")) trimmed.split("\t") else trimmed.split(Regex("\\s+"))
+                                        if (parts.isNotEmpty()) {
+                                            val domain = Store.cleanCookieDomain(parts[0])
+                                            if (!selectedDomains.any { sd -> domain == sd || domain.endsWith(".$sd") }) {
+                                                remainingLines.add(line)
+                                            }
+                                        } else {
+                                            remainingLines.add(line)
+                                        }
+                                    }
+                                }
+                                val hasData = remainingLines.any { it.trim().isNotEmpty() && !it.trim().startsWith("#") }
+                                if (hasData) {
+                                    cookieFile().writeText(remainingLines.joinToString("\n").trimEnd() + "\n")
+                                } else {
+                                    cookieFile().delete()
+                                }
+                                updateStatus()
+                                toast("Seçilen çerezler silindi")
+                            }
+                        }
+                        dialog.dismiss()
+                    }.apply {
+                        background = Ui.ripple(Ui.shape(Color.parseColor("#DC2626"), 999f), 999f)
+                        setTextColor(Color.WHITE)
+                    }
+
+                    buttonRow.addView(cancelBtn, Ui.lp(0, Ui.WRAP, 1f, r = d(8)))
+                    buttonRow.addView(deleteBtn, Ui.lp(0, Ui.WRAP, 1f, l = d(8)))
+
+                    rootLayout.addView(buttonRow, Ui.lp(Ui.MATCH, Ui.WRAP))
+                    
+                    dialog.setContentView(rootLayout)
+                    dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.9).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+                    dialog.show()
                 },
                 Ui.lp(0, Ui.WRAP, 1f, l = d(4))
             )
         }
         val cookieCard = Ui.card(this).apply {
             addView(helper("Giriş isteyen siteler için cookies.txt (Netscape biçimi)"))
-            addView(status, Ui.lp(Ui.WRAP, Ui.WRAP, t = d(12)))
-            addView(domainRowsLayout, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(10)))
-            addView(cookieButtons, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12)))
+            addView(domainRowsLayout, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(14)))
+            addView(cookieButtons, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(14)))
         }
 
         // Kart 5 (GEÇMİŞ)
@@ -755,7 +850,7 @@ class SettingsActivity : AppCompatActivity() {
                         elevation = d(16).toFloat()
                     }
 
-                    val titleView = Ui.text(this@SettingsActivity, "Geçmişi Temizle?", 18f, Ui.textClr(this@SettingsActivity), true)
+                    val titleView = Ui.text(this@SettingsActivity, "Geçmişi Temizle", 18f, Ui.textClr(this@SettingsActivity), true)
                     rootLayout.addView(titleView, Ui.lp(Ui.MATCH, Ui.WRAP, b = d(8)))
 
                     val descView = Ui.text(this@SettingsActivity, "Tüm indirme kayıtları silinecektir. Galerideki dosyalarınıza dokunulmaz.", 13f, Ui.mutedClr(this@SettingsActivity), false)
