@@ -552,7 +552,7 @@ object Ui {
 /**
  * iOS 26 tarzı açma/kapama düğmesi (kendi çizen View).
  *
- * Animasyon (iOS 26 "liquid glass" davranışı):
+ * Animasyon (iOS 26 "liquid glass" davranışı, iPhone kayıtlarına göre ayarlı):
  *  1) Basınca kulp büyür, izden taşar ve saydam cama dönüşür (altındaki iz rengi görünür)
  *  2) Bırakınca kulp diğer uca kayar; öndeki kenar hızlı, arkadaki kenar geriden gelir (sıvı gibi uzar)
  *  3) Varınca cam kulp tekrar opak beyaza döner ve normal boyuna iner
@@ -572,20 +572,20 @@ class IosSwitch @JvmOverloads constructor(
     // ---- Ölçüler (dp) ----
     private val trackW = px(66f)
     private val trackH = px(30f)
-    private val viewH = px(42f)            // basılı kulp izden taşar; görünüm izden yüksektir
+    private val viewH = px(44f)            // basılı kulp izden taşar; görünüm izden yüksektir
     private val margin = px(2.5f)
     private val thumbW = px(40f)
-    private val thumbWPressed = px(50f)
+    private val thumbWPressed = px(58f)   // iPhone'da cam kulp izin ~%90'ı kadar
     private val thumbH = trackH - 2f * margin
-    private val thumbHPressed = px(36f)
+    private val thumbHPressed = px(37f)
 
     // ---- Süreler (ms) ve eğriler: hissi buradan ayarla ----
-    private val moveMs = 460L              // kayma süresi
+    private val moveMs = 400L              // kayma süresi
     private val pressMs = 140L             // basınca büyüme / camlaşma
-    private val sizeBackDelayMs = 60L      // bırakınca boyun küçülmeye başlaması
-    private val sizeBackMs = 300L
-    private val glassBackDelayMs = 200L    // camın opak beyaza dönmeye başlaması
-    private val glassBackMs = 240L
+    private val sizeBackDelayMs = 80L      // bırakınca boyun küçülmeye başlaması
+    private val sizeBackMs = 280L
+    private val glassBackDelayMs = 150L    // camın opak beyaza dönmeye başlaması
+    private val glassBackMs = 230L
     private val easeOut = PathInterpolator(0.2f, 0.9f, 0.25f, 1f)
     private val leadEase = PathInterpolator(0.2f, 0.8f, 0.3f, 1f)     // öndeki kenar
     private val trailEase = PathInterpolator(0.3f, 0.15f, 0.2f, 1f)   // arkadaki kenar
@@ -683,8 +683,10 @@ class IosSwitch @JvmOverloads constructor(
         val r = th / 2f
         rect.set(left, top, right, bottom)
 
-        // Dolgu: cam oldukça saydamlaşır, alttaki iz rengi görünür
-        thumbPaint.alpha = (255f - 150f * glass).toInt()
+        // Dolgu: cam iken neredeyse tamamen saydamlaşır, alttaki iz rengi görünür.
+        // Gölge de camken kaybolur; yoksa saydam dolgunun altından koyu leke gibi görünür.
+        thumbPaint.setShadowLayer(px(2f), 0f, px(1f), Color.argb((60f * (1f - glass)).toInt(), 0, 0, 0))
+        thumbPaint.alpha = (255f - 215f * glass).toInt()
         canvas.drawRoundRect(rect, r, r, thumbPaint)
 
         // Cam parlaması (üstte parlak, altta hafif)
@@ -692,17 +694,19 @@ class IosSwitch @JvmOverloads constructor(
             glassPaint.shader = LinearGradient(
                 0f, top, 0f, bottom,
                 intArrayOf(
-                    Color.argb((150f * glass).toInt(), 255, 255, 255),
+                    Color.argb((110f * glass).toInt(), 255, 255, 255),
                     Color.argb(0, 255, 255, 255),
-                    Color.argb((70f * glass).toInt(), 255, 255, 255)
+                    Color.argb(0, 255, 255, 255),
+                    Color.argb((190f * glass).toInt(), 255, 255, 255)
                 ),
-                floatArrayOf(0f, 0.55f, 1f),
+                floatArrayOf(0f, 0.35f, 0.78f, 1f),
                 Shader.TileMode.CLAMP
             )
             canvas.drawRoundRect(rect, r, r, glassPaint)
         }
 
         // İnce dış çizgi + camken parlak iç kenar
+        strokePaint.color = Color.argb((46f + 50f * glass).toInt(), 0, 0, 0)
         canvas.drawRoundRect(rect, r, r, strokePaint)
         if (glass > 0.01f) {
             rimPaint.alpha = (200f * glass).toInt()
