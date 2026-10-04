@@ -32,6 +32,7 @@ import android.view.animation.DecelerateInterpolator
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -303,6 +304,67 @@ object Ui {
             })
         }
         return container
+    }
+
+    /**
+     * iOS'un seçenek sayfalarında (Fotoğraflar dışa aktarma, Kısayollar vb.)
+     * görülen, yan yana kaydırılan kapsül seçenekler. [segmentedControl]'den
+     * farkı: sabit tek-satır genişlik paylaşımı yerine her seçenek kendi
+     * doğal genişliğinde durur ve satır sığmazsa yana kaydırılır — bu yüzden
+     * 5-7 gibi çok sayıda seçenek olduğunda (örn. video kalitesi) daha
+     * doğru görünür.
+     */
+    fun qualityChips(
+        c: Context,
+        items: List<Pair<String, String>>, // (etiket, değer)
+        selectedValue: String,
+        onSelect: (String) -> Unit
+    ): View {
+        val isDarkTheme = isDark(c)
+        val unselectedBg = if (isDarkTheme) safeColor("#141416", Color.DKGRAY) else safeColor("#E5E5EA", Color.LTGRAY)
+        val unselectedFg = mutedClr(c)
+        val selectedBg = primary(c)
+        val selectedFg = Color.WHITE
+        val r = dp(c, 999).toFloat()
+
+        val row = LinearLayout(c).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        items.forEachIndexed { index, (label, value) ->
+            val isSelected = (value == selectedValue)
+            val chip = TextView(c).apply {
+                text = label
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setTextColor(if (isSelected) selectedFg else unselectedFg)
+                typeface = font(c, bold = isSelected)
+                gravity = Gravity.CENTER
+                maxLines = 1
+                val pV = dp(c, 9)
+                val pH = dp(c, 16)
+                setPadding(pH, pV, pH, pV)
+                background = ripple(shape(if (isSelected) selectedBg else unselectedBg, r), r)
+                if (isSelected) elevation = dp(c, 1).toFloat()
+                setOnClickListener {
+                    it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    if (value != selectedValue) onSelect(value)
+                }
+            }
+            row.addView(
+                chip,
+                LinearLayout.LayoutParams(WRAP, WRAP).apply {
+                    if (index > 0) marginStart = dp(c, 8)
+                }
+            )
+        }
+
+        return HorizontalScrollView(c).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+            addView(row, FrameLayout.LayoutParams(WRAP, WRAP))
+        }
     }
 
     fun pill(c: Context, s: String, fg: Int, bg: Int): TextView =

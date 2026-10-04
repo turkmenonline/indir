@@ -566,27 +566,19 @@ class SettingsActivity : AppCompatActivity() {
         }
         updateThemeSegment()
 
-        // Video Kalitesi segmenti
+        // Video Kalitesi — varsayılan (İndir ekranında link başına değiştirilebilir)
         val qualityCardHolder = FrameLayout(this)
         fun updateQualitySegment() {
             qualityCardHolder.removeAllViews()
             val currentQuality = Store.videoQuality(this@SettingsActivity)
-            val qualityList = listOf(
-                Pair("En iyi", Store.QUALITY_BEST),
-                Pair("720p", Store.QUALITY_720P),
-                Pair("Ses", Store.QUALITY_AUDIO_ONLY)
-            )
-            val currentIndex = qualityList.indexOfFirst { it.second == currentQuality }.coerceAtLeast(0)
-            val titles = qualityList.map { it.first }
-            val seg = Ui.segmentedControl(this@SettingsActivity, titles, currentIndex) { idx ->
-                val qVal = qualityList[idx].second
+            val chips = Ui.qualityChips(this@SettingsActivity, Store.QUALITY_OPTIONS, currentQuality) { qVal ->
                 if (Store.videoQuality(this@SettingsActivity) != qVal) {
                     Store.setVideoQuality(this@SettingsActivity, qVal)
                     updateQualitySegment()
-                    toast("Video kalitesi güncellendi: ${qualityList[idx].first}")
+                    toast("Varsayılan kalite: ${Store.qualityLabel(qVal)}")
                 }
             }
-            qualityCardHolder.addView(seg, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
+            qualityCardHolder.addView(chips, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
         }
         updateQualitySegment()
 
@@ -604,8 +596,8 @@ class SettingsActivity : AppCompatActivity() {
             }
             addView(divider2)
 
-            addView(label("Video Kalitesi"))
-            addView(helper("İndirilen videoların çözünürlük kalitesini belirler"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4), b = d(12)))
+            addView(label("Varsayılan Video Kalitesi"))
+            addView(helper("İndir ekranında link başına bunu değiştirebilirsin"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4), b = d(12)))
             addView(qualityCardHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
         }
 

@@ -565,10 +565,15 @@ def _ytdlp(task_id, url, dest, cookies, template, sink, quality="best", ffmpeg_p
                 sink.updateProgress(pct, detail)
 
     log = _Log()
-    if quality == "720p":
-        fmt = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best'
-    elif quality == "audio_only":
+    if quality == "audio_only":
         fmt = 'bestaudio[ext=m4a]/bestaudio/best'
+    elif quality and quality != "best" and quality.rstrip("p").isdigit():
+        # "2160p", "1440p", "1080p", "720p", "360p" gibi belirli bir
+        # çözünürlük tavanı istenmiş. O tavanın altındaki en iyi video+ses
+        # denenir; o çözünürlük hiç yoksa yt-dlp otomatik olarak var olan
+        # en yakın altı seçer (best[height<=N] her zaman bir sonuç bulur).
+        h = int(quality.rstrip("p"))
+        fmt = f'bestvideo[height<={h}]+bestaudio/best[height<={h}]/best'
     else:
         fmt = 'bestvideo+bestaudio/best'
 

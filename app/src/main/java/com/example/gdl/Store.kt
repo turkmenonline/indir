@@ -16,8 +16,27 @@ object Store {
     const val THEME_DARK = 2
 
     const val QUALITY_BEST = "best"
+    const val QUALITY_2160P = "2160p"
+    const val QUALITY_1440P = "1440p"
+    const val QUALITY_1080P = "1080p"
     const val QUALITY_720P = "720p"
+    const val QUALITY_360P = "360p"
     const val QUALITY_AUDIO_ONLY = "audio_only"
+
+    /** Hem Ayarlar'daki varsayılan seçici hem de İndir ekranındaki tek seferlik
+     * seçici bu listeyi kullanır; sıralama görünüm sırasıdır. */
+    val QUALITY_OPTIONS: List<Pair<String, String>> = listOf(
+        "En iyi" to QUALITY_BEST,
+        "2160p" to QUALITY_2160P,
+        "1440p" to QUALITY_1440P,
+        "1080p" to QUALITY_1080P,
+        "720p" to QUALITY_720P,
+        "360p" to QUALITY_360P,
+        "Ses" to QUALITY_AUDIO_ONLY
+    )
+
+    fun qualityLabel(value: String): String =
+        QUALITY_OPTIONS.firstOrNull { it.second == value }?.first ?: "En iyi"
 
     fun videoQuality(c: Context): String = prefs(c).getString("video_quality", QUALITY_BEST) ?: QUALITY_BEST
     fun setVideoQuality(c: Context, q: String) {

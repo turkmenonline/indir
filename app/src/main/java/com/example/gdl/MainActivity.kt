@@ -42,6 +42,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mainContent: LinearLayout
     private lateinit var activeDownloadsContainer: LinearLayout
     private val currentIndex = 0
+    // Bu ekranda seçilen kalite yalnızca bir sonraki indirme için geçerli;
+    // Ayarlar'daki varsayılanı kalıcı olarak değiştirmez.
+    private var selectedQuality: String = Store.QUALITY_BEST
 
     private var activeDetailDialog: Dialog? = null
     private var activeDetailId: Long = -1L
@@ -100,9 +103,28 @@ class MainActivity : AppCompatActivity() {
             addView(paste, Ui.lp(0, Ui.WRAP, 1f, r = d(4)))
             addView(goButton, Ui.lp(0, Ui.WRAP, 1f, l = d(4)))
         }
+
+        // Bu indirme için kalite seçici: varsayılan olarak Ayarlar'daki
+        // değerle açılır, burada değiştirmek yalnızca bir sonraki indirmeyi
+        // etkiler, Ayarlar'ı değiştirmez.
+        selectedQuality = Store.videoQuality(this)
+        val qualityLabel = Ui.text(this, "Kalite", 13f, Ui.mutedClr(this), false)
+        val qualityChipsHolder = FrameLayout(this)
+        fun updateQualityChips() {
+            qualityChipsHolder.removeAllViews()
+            val chips = Ui.qualityChips(this, Store.QUALITY_OPTIONS, selectedQuality) { qVal ->
+                selectedQuality = qVal
+                updateQualityChips()
+            }
+            qualityChipsHolder.addView(chips, FrameLayout.LayoutParams(Ui.WRAP, Ui.WRAP))
+        }
+        updateQualityChips()
+
         val inputCard = Ui.card(this).apply {
             addView(input, Ui.lp(Ui.MATCH, Ui.WRAP))
-            addView(buttons, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(12)))
+            addView(qualityLabel, Ui.lp(Ui.WRAP, Ui.WRAP, t = d(14), b = d(6)))
+            addView(qualityChipsHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
+            addView(buttons, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(14)))
         }
 
         activeDownloadsContainer = LinearLayout(this).apply {
@@ -638,7 +660,7 @@ class MainActivity : AppCompatActivity() {
     private fun startDownload(url: String) {
         val i = Intent(this, DownloadService::class.java).apply {
             putExtra(DownloadService.EXTRA_URL, url)
-            putExtra("custom_quality", Store.videoQuality(this@MainActivity))
+            putExtra("custom_quality", selectedQuality)
         }
         startForegroundService(i)
         input.setText("")
