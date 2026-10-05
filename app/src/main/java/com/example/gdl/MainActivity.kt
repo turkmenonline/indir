@@ -175,6 +175,36 @@ class MainActivity : AppCompatActivity() {
         Ui.setupEdgeToEdge(this, root)
         handleIntent(intent)
         handlePageAnimation(intent)
+        checkAutoUpdateSilently()
+    }
+
+    /**
+     * Ayarlar'daki periyot (günlük/haftalık/aylık) dolmuşsa yt-dlp'yi sessizce
+     * günceller — kullanıcı hiç Ayarlar ekranına girmese bile, uygulamayı her
+     * açtığında bu kontrol çalışır. Böylece YouTube gibi sık değişen
+     * sitelerde "bir anda çalışmaz oldu" durumu en aza iner. Görünür bir arayüz
+     * değişikliği yapmaz; hata olursa sessizce geçilir, bir sonraki açılışta
+     * tekrar denenir. Gerçek güncelleme mantığı (dl.py:update_yt_dlp) zaten
+     * Ayarlar ekranında kullanılan ile aynıdır.
+     */
+    private fun checkAutoUpdateSilently() {
+        if (!Store.shouldAutoUpdate(this)) return
+        val updatesDir = java.io.File(filesDir, "python_updates")
+        Thread {
+            try {
+                if (!com.chaquo.python.Python.isStarted()) {
+                    com.chaquo.python.Python.start(com.chaquo.python.android.AndroidPlatform(this))
+                }
+                val py = com.chaquo.python.Python.getInstance()
+                val dlModule = py.getModule("dl")
+                val channel = Store.updateChannel(this)
+                dlModule.callAttr("update_yt_dlp", updatesDir.absolutePath, channel)
+                Store.setLastUpdateCheck(this, System.currentTimeMillis())
+            } catch (_: Exception) {
+                // Sessizce geç: internet yoktur ya da sunucu yanıt vermemiştir,
+                // bir sonraki uygulama açılışında zaten tekrar denenecek.
+            }
+        }.start()
     }
 
     fun refreshLiveDownloadBox() {

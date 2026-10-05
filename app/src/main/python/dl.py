@@ -590,6 +590,12 @@ def _ytdlp(task_id, url, dest, cookies, template, sink, quality="best", ffmpeg_p
         "socket_timeout": 5,
         "logger": log,
         "progress_hooks": [ytdlp_hook],
+        # Video genelde küçük parçalar (fragment) halinde geliyor; bunları
+        # tek tek sırayla değil, aynı anda birden fazla bağlantıyla çekmek
+        # gerçek bir hız artışı sağlıyor (CLI'daki -N/--concurrent-fragments
+        # ile aynı şey). Sunucunun izin verdiği gerçek üst sınırı aşamaz,
+        # yalnızca mevcut bant genişliğini daha iyi kullanır.
+        "concurrent_fragment_downloads": 8,
     }
     if cookies:
         ydl_opts["cookiefile"] = cookies
