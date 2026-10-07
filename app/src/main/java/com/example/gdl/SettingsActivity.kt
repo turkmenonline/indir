@@ -582,6 +582,39 @@ class SettingsActivity : AppCompatActivity() {
         }
         updateQualitySegment()
 
+        // Altyazı: dil seçimi + göm/ayrı dosya anahtarı
+        val subtitleCardHolder = FrameLayout(this)
+        val subtitleSwitchHolder = FrameLayout(this)
+        fun updateSubtitleSwitch() {
+            subtitleSwitchHolder.removeAllViews()
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                val labelView = Ui.text(this@SettingsActivity, "Videonun içine göm", 15f, Ui.textClr(this@SettingsActivity), false)
+                addView(labelView, Ui.lp(0, Ui.WRAP, 1f))
+                val sw = Ui.iosSwitch(this@SettingsActivity, Store.subtitleEmbedded(this@SettingsActivity)) { checked ->
+                    Store.setSubtitleEmbedded(this@SettingsActivity, checked)
+                    toast(if (checked) "Altyazı videoya gömülecek" else "Altyazı ayrı .srt dosyası olarak inecek")
+                }
+                addView(sw, Ui.lp(Ui.WRAP, Ui.WRAP))
+            }
+            subtitleSwitchHolder.addView(row, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
+        }
+        fun updateSubtitleSegment() {
+            subtitleCardHolder.removeAllViews()
+            val currentSub = Store.subtitleLang(this@SettingsActivity)
+            val chips = Ui.qualityChips(this@SettingsActivity, Store.SUBTITLE_OPTIONS, currentSub) { subVal ->
+                if (Store.subtitleLang(this@SettingsActivity) != subVal) {
+                    Store.setSubtitleLang(this@SettingsActivity, subVal)
+                    updateSubtitleSegment()
+                    toast("Altyazı: ${Store.subtitleLabel(subVal)}")
+                }
+            }
+            subtitleCardHolder.addView(chips, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
+        }
+        updateSubtitleSegment()
+        updateSubtitleSwitch()
+
         // Kart 2 (GÖRÜNÜM)
         val appearanceCard = Ui.card(this).apply {
             addView(label("Uygulama Teması"))
@@ -599,6 +632,19 @@ class SettingsActivity : AppCompatActivity() {
             addView(label("Varsayılan Video Kalitesi"))
             addView(helper("İndir ekranında link başına bunu değiştirebilirsin"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4), b = d(12)))
             addView(qualityCardHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
+
+            val divider3 = View(context).apply {
+                setBackgroundColor(Ui.line(context))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(context, 1)).apply {
+                    setMargins(0, Ui.dp(context, 16), 0, Ui.dp(context, 16))
+                }
+            }
+            addView(divider3)
+
+            addView(label("Altyazı"))
+            addView(helper("Elle hazırlanmış yoksa otomatik altyazıya düşülür"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4), b = d(12)))
+            addView(subtitleCardHolder, Ui.lp(Ui.MATCH, Ui.WRAP, b = d(12)))
+            addView(subtitleSwitchHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
         }
 
         album = Ui.field(this, "GalleryDl").apply {

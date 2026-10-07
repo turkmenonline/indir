@@ -527,7 +527,8 @@ class _Log:
         self.lines.append("hata: %s" % msg)
 
 
-def _ytdlp(task_id, url, dest, cookies, template, sink, quality="best", ffmpeg_path="", ffmpeg_lib_dir=""):
+def _ytdlp(task_id, url, dest, cookies, template, sink, quality="best", ffmpeg_path="", ffmpeg_lib_dir="",
+           subtitle_lang="off", subtitle_embed=True):
     import yt_dlp
     limiter = RateLimiter(0.5)
     tid_str = str(task_id)
@@ -609,6 +610,26 @@ def _ytdlp(task_id, url, dest, cookies, template, sink, quality="best", ffmpeg_p
         log.warning("ffmpeg kullanılamıyor (%s), tek parça formata düşülüyor" % (ffmpeg_why if ffmpeg_path else "yol boş"))
         ydl_opts['format'] = single_fmt
         ydl_opts.pop("merge_output_format", None)
+
+    if subtitle_lang and subtitle_lang != "off":
+        langs = [x.strip() for x in subtitle_lang.split(",") if x.strip()]
+        ydl_opts["writesubtitles"] = True
+        # İstenen dilde elle hazırlanmış altyazı yoksa YouTube'un otomatik
+        # (makine) altyazısına düşülür; hiç yoksa sessizce atlanır, indirme
+        # bu yüzden başarısız olmaz.
+        ydl_opts["writeautomaticsub"] = True
+        ydl_opts["subtitleslangs"] = langs
+        if subtitle_embed and ffmpeg_ok:
+            ydl_opts["embedsubtitles"] = True
+            ydl_opts.setdefault("postprocessors", []).append({"key": "FFmpegEmbedSubtitle"})
+        else:
+            if subtitle_embed and not ffmpeg_ok:
+                log.lines.append("uyarı: ffmpeg yok, altyazı videoya gömülemiyor; ayrı dosya olarak inecek")
+            ydl_opts["subtitlesformat"] = "srt/best"
+            if ffmpeg_ok:
+                ydl_opts.setdefault("postprocessors", []).append(
+                    {"key": "FFmpegSubtitlesConvertor", "format": "srt"}
+                )
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -841,7 +862,8 @@ def _ig_embed(task_id, url, dest, sink=None):
     return "\n".join(log)
 
 
-def _run_tools(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, quality, ffmpeg_path="", ffmpeg_lib_dir=""):
+def _run_tools(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, quality, ffmpeg_path="", ffmpeg_lib_dir="",
+               subtitle_lang="off", subtitle_embed=True):
     tid_str = str(task_id)
     _tl.task_id = tid_str
     is_ig_video = "instagram.com" in url and any(p in url for p in ["/reel/", "/reels/", "/p/", "/tv/"])
@@ -857,7 +879,8 @@ def _run_tools(task_id, url, out_dir, cookies, gallery_template, ytdlp_template,
             if tool == "gallery":
                 out = _gallery(task_id, url, out_dir, cookies, gallery_template, sink, ffmpeg_path, ffmpeg_lib_dir)
             else:
-                out = _ytdlp(task_id, url, out_dir, cookies, ytdlp_template, sink, quality, ffmpeg_path, ffmpeg_lib_dir)
+                out = _ytdlp(task_id, url, out_dir, cookies, ytdlp_template, sink, quality, ffmpeg_path, ffmpeg_lib_dir,
+                             subtitle_lang, subtitle_embed)
         except Exception as e:
             out = "%s: %s" % (type(e).__name__, e)
         parts.append("[%s]\n%s" % (tool, out.strip()))
@@ -893,7 +916,8 @@ def _hard_stop(tid_str, w):
 CANCEL_RESULT = "[iptal]\nKullanıcı tarafından iptal edildi"
 
 
-def run(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, updates_dir=None, quality="best", ffmpeg_path="", ffmpeg_lib_dir=""):
+def run(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, updates_dir=None, quality="best", ffmpeg_path="", ffmpeg_lib_dir="",
+        subtitle_lang="off", subtitle_embed=True):
     tid_str = str(task_id)
     if updates_dir:
         setup_updates_path(updates_dir)
@@ -901,7 +925,8 @@ def run(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, 
 
     def work():
         try:
-            result["out"] = _run_tools(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, quality, ffmpeg_path, ffmpeg_lib_dir)
+            result["out"] = _run_tools(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, quality, ffmpeg_path, ffmpeg_lib_dir,
+                                        subtitle_lang, subtitle_embed)
         except BaseException as e:
             result["err"] = e
 

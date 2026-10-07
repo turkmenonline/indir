@@ -43,6 +43,33 @@ object Store {
         prefs(c).edit().putString("video_quality", q).apply()
     }
 
+    // ---- Altyazı ----
+    const val SUBTITLE_OFF = "off"
+    const val SUBTITLE_TR = "tr"
+    const val SUBTITLE_EN = "en"
+    const val SUBTITLE_TR_EN = "tr,en"
+
+    val SUBTITLE_OPTIONS: List<Pair<String, String>> = listOf(
+        "Kapalı" to SUBTITLE_OFF,
+        "Türkçe" to SUBTITLE_TR,
+        "English" to SUBTITLE_EN,
+        "Türkçe + English" to SUBTITLE_TR_EN
+    )
+
+    fun subtitleLabel(value: String): String =
+        SUBTITLE_OPTIONS.firstOrNull { it.second == value }?.first ?: "Kapalı"
+
+    fun subtitleLang(c: Context): String = prefs(c).getString("subtitle_lang", SUBTITLE_OFF) ?: SUBTITLE_OFF
+    fun setSubtitleLang(c: Context, v: String) {
+        prefs(c).edit().putString("subtitle_lang", v).apply()
+    }
+
+    /** true: altyazı videonun içine gömülür (oynatıcıda aç/kapa). false: ayrı .srt dosyası. */
+    fun subtitleEmbedded(c: Context): Boolean = prefs(c).getBoolean("subtitle_embedded", true)
+    fun setSubtitleEmbedded(c: Context, v: Boolean) {
+        prefs(c).edit().putBoolean("subtitle_embedded", v).apply()
+    }
+
     private fun prefs(c: Context) = c.getSharedPreferences("gdl", Context.MODE_PRIVATE)
 
     fun themeMode(c: Context): Int = prefs(c).getInt("theme_mode", THEME_SYSTEM)

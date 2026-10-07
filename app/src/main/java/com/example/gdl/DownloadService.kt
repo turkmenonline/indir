@@ -303,6 +303,8 @@ class DownloadService : Service() {
             val updatesDir = File(filesDir, "python_updates")
             val updatesPath = if (updatesDir.exists()) updatesDir.absolutePath else ""
             val quality = customQuality.takeIf { it.isNotEmpty() } ?: Store.videoQuality(this)
+            val subtitleLang = Store.subtitleLang(this)
+            val subtitleEmbed = Store.subtitleEmbedded(this)
             val galleryTemplate = Store.galleryTemplate(this)
             val ytdlpTemplate = Store.ytdlpTemplate(this)
             val nativeDir = File(applicationInfo.nativeLibraryDir)
@@ -316,7 +318,8 @@ class DownloadService : Service() {
                 ?.parentFile?.absolutePath ?: ""
             Log.d("FFMPEG_FIX", "ffmpegPath=$ffmpegPath libDir=$ffmpegLibDir")
             log = Python.getInstance().getModule("dl")
-                .callAttr("run", id.toString(), url, dir.absolutePath, cookiePath, galleryTemplate, ytdlpTemplate, sink, updatesPath, quality, ffmpegPath, ffmpegLibDir)
+                .callAttr("run", id.toString(), url, dir.absolutePath, cookiePath, galleryTemplate, ytdlpTemplate, sink, updatesPath, quality, ffmpegPath, ffmpegLibDir,
+                    subtitleLang, subtitleEmbed)
                 .toString()
 
             if (cancelledTasks.contains(id)) {
@@ -327,8 +330,18 @@ class DownloadService : Service() {
                 if (cancelledTasks.contains(id)) {
                     throw Exception("İptal edildi")
                 }
+                val ext = f.extension.lowercase()
+                if (ext == "srt" || ext == "vtt") {
+                    // Altyazı videoya gömülemediyse (embed kapalı ya da ffmpeg yoktu)
+                    // buraya ayrı bir dosya olarak düşer; Galeri'ye değil
+                    // İndirilenler'e kaydedilir, çünkü görsel medya değildir.
+                    if (saveSubtitle(f, platform)) {
+                        log += "\n[altyazı] ${f.name}: İndirilenler'e kaydedildi"
+                    }
+                    continue
+                }
                 val mime = MimeTypeMap.getSingleton()
-                    .getMimeTypeFromExtension(f.extension.lowercase())
+                    .getMimeTypeFromExtension(ext)
                 if (mime != null) {
                     val video = mime.startsWith("video")
                     val image = mime.startsWith("image")
@@ -572,6 +585,30 @@ class DownloadService : Service() {
             else -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         }
         val uri = contentResolver.insert(collection, values) ?: return false
+        contentResolver.openOutputStream(uri)?.use { o ->
+            f.inputStream().use { it.copyTo(o) }
+        }
+        return true
+    }
+
+    /**
+     * .srt/.vtt altyazı dosyaları görsel medya olmadığı için Galeri'ye değil,
+     * İndirilenler/<albüm> klasörüne kaydedilir. Android'in Downloads
+     * koleksiyonu yalnızca "Download/" altındaki yollara izin verir.
+     */
+    private fun saveSubtitle(f: File, platform: String): Boolean {
+        val ext = f.extension.lowercase()
+        val mime = if (ext == "srt") "application/x-subrip" else "text/vtt"
+        val album = Store.album(this)
+        val cleanPlatform = platform.trim()
+        val finalName = if (cleanPlatform.isNotEmpty()) "$cleanPlatform altyazı ${f.name}" else f.name
+
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, finalName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mime)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/$album")
+        }
+        val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false
         contentResolver.openOutputStream(uri)?.use { o ->
             f.inputStream().use { it.copyTo(o) }
         }
