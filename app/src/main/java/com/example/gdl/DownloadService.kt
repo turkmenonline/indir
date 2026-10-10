@@ -14,6 +14,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaExtractor
 import android.media.MediaMetadataRetriever
+import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -48,8 +50,48 @@ class DownloadService : Service() {
 
     companion object {
         const val EXTRA_URL = "url"
+        const val EXTRA_ID = "download_id"
+        const val ACTION_CANCEL = "com.example.gdl.action.CANCEL_DOWNLOAD"
         const val CH_PROGRESS = "progress"
         const val CH_RESULT = "result"
+        // Android 16 canlı bildirim için ayrı kanal: bazı üreticiler (Samsung One UI) düşük
+        // önemdeki kanalları Now Bar / hap olarak göstermiyor. Kanal önemi sonradan değişmediği
+        // için yeni bir kanal kimliği kullanıyoruz.
+        const val CH_LIVE = "progress_live"
+
+        fun ensureLiveChannel(nm: NotificationManager) {
+            val ch = NotificationChannel(CH_LIVE, "İndirme durumu (canlı)", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Devam eden indirmeler için canlı bildirim"
+                enableVibration(false)
+                setSound(null, null)
+            }
+            nm.createNotificationChannel(ch)
+        }
+
+        /**
+         * Samsung One UI'ın kendi "ongoing activity" (Live Notification / Now Bar) alanları.
+         * Yalnızca Samsung cihazlarda eklenir; diğer cihazlarda hiçbir etkisi yoktur.
+         * Samsung bu özelliği paket adına bağlı bir izin listesiyle kısıtlıyor.
+         */
+        fun samsungExtras(primary: String, secondary: String, progress: Int): Bundle = Bundle().apply {
+            putInt("android.ongoingActivityNoti.style", 1)
+            // Durum çubuğundaki hapın arka planı: verilmezse açık renk zeminde silik görünüyor.
+            putInt("android.ongoingActivityNoti.chipBgColor", 0xFF1A73E8.toInt())
+            putString("android.ongoingActivityNoti.primaryInfo", primary)
+            putString("android.ongoingActivityNoti.secondaryInfo", secondary)
+            putString("android.ongoingActivityNoti.nowbarPrimaryInfo", primary)
+            putString("android.ongoingActivityNoti.nowbarSecondaryInfo", secondary)
+            if (progress in 0..100) {
+                putInt("android.ongoingActivityNoti.progress", progress)
+                putInt("android.ongoingActivityNoti.progressMax", 100)
+            }
+            // Bildirimdeki eylem düğmeleri (İptal) Samsung'un kendi canlı bildirim düzeninde
+            // gösterilsin diye. Değerler bir geliştirici makalesinden, doğrulanmadı.
+            putInt("android.ongoingActivityNoti.actionType", 1)
+            putInt("android.ongoingActivityNoti.actionPrimarySet", 0)
+        }
+
+        fun isSamsung(): Boolean = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
 
         const val STATUS_QUEUED = "Sırada"
         const val STATUS_DOWNLOADING = "İndiriliyor"
@@ -149,16 +191,83 @@ class DownloadService : Service() {
         nm.createNotificationChannel(
             NotificationChannel(CH_RESULT, "İndirme sonucu", NotificationManager.IMPORTANCE_DEFAULT)
         )
+        ensureLiveChannel(nm)
+        // Önceki denemeden kalan, artık kullanılmayan kanalı telefonun bildirim ayarlarından kaldır.
+        nm.deleteNotificationChannel("fgs_quiet")
     }
 
     private fun getPlatformName(url: String): String = Store.getPlatformName(url)
 
-    private fun progressNotif(platform: String, text: String, pct: Int): Notification {
-        val b = NotificationCompat.Builder(this, CH_PROGRESS)
-            .setSmallIcon(R.drawable.stat_sys_download)
+    /** Android 16 ve üstünde canlı bildirim (Now Bar / hap) kullanılır. */
+    private fun liveActive(): Boolean = Build.VERSION.SDK_INT >= 36
+
+    /** İlerleme bildirimini kapatır. */
+    private fun cancelProgressNotifs() {
+        nm.cancel(1)
+    }
+
+    private fun progressNotif(platform: String, text: String, pct: Int, id: Long): Notification {
+        val openApp = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
+        )
+        // "İptal" eylemi: bu bildirimin ait olduğu indirmeyi durdurur (ana ekrandaki İptal Et ile aynı).
+        val cancelIntent = PendingIntent.getService(
+            this,
+            (id % 1_000_000L).toInt() + 1000,
+            Intent(this, DownloadService::class.java).setAction(ACTION_CANCEL).putExtra(EXTRA_ID, id),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val live = liveActive()
+        val b = NotificationCompat.Builder(this, if (live) CH_LIVE else CH_PROGRESS)
+            .setSmallIcon(if (live) com.example.gdl.R.drawable.ic_tab_download else R.drawable.stat_sys_download)
             .setContentTitle("İndiriliyor...")
             .setContentText(if (text.isNotEmpty()) "$platform • $text" else platform)
+            .setContentIntent(openApp)
             .setOngoing(true)
+            .addAction(com.example.gdl.R.drawable.ic_cancel, "İptal", cancelIntent)
+
+        if (live) {
+            // Android 16+ Live Update (Now Bar / durum çubuğu hapı).
+            // Başarısız olursa klasik bildirime düşer, indirme etkilenmez.
+            b.setCategory(NotificationCompat.CATEGORY_PROGRESS)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+                .setShowWhen(false)
+            if (isSamsung()) {
+                b.addExtras(
+                    samsungExtras(
+                        primary = if (pct >= 0) "%${pct.coerceIn(0, 100)}" else "İndiriliyor",
+                        secondary = if (text.isNotEmpty()) "$platform • $text" else platform,
+                        progress = pct
+                    )
+                )
+            }
+            try {
+                b.setRequestPromotedOngoing(true)
+                if (pct >= 0) {
+                    val p = pct.coerceIn(0, 100)
+                    b.setStyle(
+                        NotificationCompat.ProgressStyle()
+                            .setProgress(p)
+                            .setStyledByProgress(true)
+                    )
+                    b.setShortCriticalText("$p%")
+                } else {
+                    b.setStyle(
+                        NotificationCompat.ProgressStyle()
+                            .setProgressIndeterminate(true)
+                            .setStyledByProgress(true)
+                    )
+                }
+                return b.build()
+            } catch (e: Throwable) {
+                Log.w("DownloadService", "Live Update kurulamadı, klasik bildirime dönülüyor", e)
+                b.setRequestPromotedOngoing(false)
+                b.setStyle(null)
+            }
+        }
+
         if (pct >= 0) b.setProgress(100, pct, false) else b.setProgress(0, 0, true)
         return b.build()
     }
@@ -173,6 +282,13 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val rawUrl = intent?.getStringExtra(EXTRA_URL)
         val customQuality = intent?.getStringExtra("custom_quality") ?: ""
+        if (intent != null && intent.action == ACTION_CANCEL) {
+            // Bildirimdeki "İptal" eylemi
+            val cancelId = intent.getLongExtra(EXTRA_ID, -1L)
+            if (cancelId > 0) cancelDownload(cancelId)
+            stopIfIdle()
+            return START_NOT_STICKY
+        }
         if (rawUrl == null) {
             stopIfIdle()
             return START_NOT_STICKY
@@ -189,13 +305,13 @@ class DownloadService : Service() {
             return START_NOT_STICKY
         }
 
+        val id = System.currentTimeMillis()
         startForeground(
             1,
-            progressNotif(platform, "Hazırlanıyor…", -1),
+            progressNotif(platform, "Hazırlanıyor…", -1, id),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         )
         pending.incrementAndGet()
-        val id = System.currentTimeMillis()
         val state = DownloadState(id, platform, url, -1, "Sırada", id)
         activeDownloads[id] = state
         notifyGlobalStateChanged()
@@ -207,7 +323,7 @@ class DownloadService : Service() {
                     val dir = File(cacheDir, "dl_$id")
                     dir.deleteRecursively()
                     Store.upsert(this, id, url, STATUS_INTERRUPTED, "Kullanıcı tarafından iptal edildi")
-                    nm.cancel(1)
+                    cancelProgressNotifs()
                     cancelledTasks.remove(id)
                     activeDownloads.remove(id)
                     notifyGlobalStateChanged()
@@ -297,7 +413,7 @@ class DownloadService : Service() {
                     st.detail = detail
                 }
                 notifyGlobalStateChanged()
-                nm.notify(1, progressNotif(platform, detail, p))
+                nm.notify(1, progressNotif(platform, detail, p, id))
             }, { cancelledTasks.contains(id) })
 
             val updatesDir = File(filesDir, "python_updates")
@@ -379,7 +495,7 @@ class DownloadService : Service() {
         if (isCancelled || cancelledTasks.contains(id)) {
             dir.deleteRecursively()
             Store.upsert(this, id, url, STATUS_INTERRUPTED, "Kullanıcı tarafından iptal edildi")
-            nm.cancel(1)
+            cancelProgressNotifs()
             cancelledTasks.remove(id)
             activeDownloads.remove(id)
             notifyGlobalStateChanged()
@@ -394,7 +510,7 @@ class DownloadService : Service() {
             Store.upsert(this, id, url, STATUS_INTERRUPTED, log.takeLast(3000))
         }
         notifyGlobalStateChanged()
-        nm.cancel(1)
+        cancelProgressNotifs()
 
         val ok = success
         val detailText = when {

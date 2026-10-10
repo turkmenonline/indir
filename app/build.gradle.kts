@@ -7,11 +7,19 @@ plugins {
     id("com.chaquo.python")
 }
 
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
 android {
     namespace = "com.example.gdl"
-    compileSdk = 34
+    compileSdk = 36
     defaultConfig {
-        applicationId = "com.example.gdl"
+        // Yalnızca kendi cihazınızda denemek için: local.properties içine
+        // nowbar.package=<paket adı> yazarsanız uygulama o paket adıyla derlenir.
+        // local.properties git'e girmez, yani bu değer repoya çıkmaz.
+        applicationId = localProps.getProperty("nowbar.package")?.takeIf { it.isNotBlank() } ?: "com.example.gdl"
         minSdk = 29
         targetSdk = 34
         versionCode = 3
@@ -42,7 +50,7 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("io.coil-kt:coil:2.6.0")
@@ -58,10 +66,6 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 
-val localProps = Properties().apply {
-    val f = rootProject.file("local.properties")
-    if (f.exists()) f.inputStream().use { load(it) }
-}
 val localPython = localProps.getProperty("python.path")
 
 chaquopy {
