@@ -726,6 +726,53 @@ def _ig_og_image(page):
     return None
 
 
+_IG_RESERVED = {"p", "reel", "reels", "tv", "s", "stories", "explore", "accounts", "embed", "web", "direct"}
+_IG_USER_OK = re.compile(r"^[A-Za-z0-9_.]{1,30}$")
+
+
+def _ig_username_from_url(u):
+    """instagram.com/<kullanici>/p/<kod>/ biçimli adreslerden kullanıcı adını alır."""
+    try:
+        parts = [x for x in urllib.parse.urlparse(u).path.split("/") if x]
+    except Exception:
+        return None
+    if len(parts) >= 2 and parts[1] in ("p", "reel", "reels", "tv"):
+        cand = parts[0]
+        if cand.lower() not in _IG_RESERVED and _IG_USER_OK.match(cand):
+            return cand
+    return None
+
+
+def _ig_username(page, final_url=""):
+    """Gönderi sayfasından (embed ya da önizleme) paylaşan hesabın kullanıcı adını bulur.
+    Giriş gerektirmez; bulamazsa None döner."""
+    # 1) yönlendirilmiş/kanonik adres: instagram.com/<kullanici>/p/<kod>/
+    u = _ig_username_from_url(final_url)
+    if u:
+        return u
+    for m in re.finditer(r'(?:canonical"[^>]*href|og:url"[^>]*content|href)=["\']([^"\']*instagram\.com/[^"\']+/(?:p|reel|reels|tv)/[^"\']+)', page):
+        u = _ig_username_from_url(_html.unescape(m.group(1)))
+        if u:
+            return u
+    # 2) embed sayfasındaki kullanıcı adı alanı
+    m = re.search(r'class=["\'][^"\']*UsernameText[^"\']*["\'][^>]*>\s*([A-Za-z0-9_.]{1,30})\s*<', page)
+    if m:
+        return m.group(1)
+    # 3) sayfadaki JSON: "owner":{..."username":"..."} ya da düz "username":"..."
+    txt = page.replace('\\"', '"')
+    m = re.search(r'"owner"\s*:\s*\{[^{}]*?"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"', txt)
+    if m:
+        return m.group(1)
+    m = re.search(r'"username"\s*:\s*"([A-Za-z0-9_.]{1,30})"', txt)
+    if m:
+        return m.group(1)
+    # 4) og:description: '12 likes, 3 comments - kullanici on March 1, 2025: "..."'
+    m = re.search(r'-\s+([A-Za-z0-9_.]{1,30})\s+on\s+[A-Z][a-z]+ \d{1,2}, \d{4}', _html.unescape(page))
+    if m:
+        return m.group(1)
+    return None
+
+
 def _ig_scan_cdn(page, log=None):
     """Sayfadaki TÜM cdninstagram/fbcdn görsel adreslerini tarar.
     Profil resimlerini eler, aynı fotoğrafın en büyük sürümünü seçer."""
@@ -790,6 +837,7 @@ def _ig_embed(task_id, url, dest, sink=None):
         return "gönderi kodu bulunamadı"
     code = m.group(1)
     log = ["gönderi kodu: %s" % code]
+    username = _ig_username_from_url(url)
     images = []
     attempts = [("embed/captioned/", None), ("embed/", None), ("", _IG_BOT_UA)]
     for suffix, ua in attempts:
@@ -804,6 +852,10 @@ def _ig_embed(task_id, url, dest, sink=None):
         if "accounts/login" in final:
             log.append("  giriş sayfasına yönlendirildi")
             continue
+        if not username:
+            username = _ig_username(page, final)
+            if username:
+                log.append("  kullanıcı adı: %s" % username)
         if ua:
             # Önizleme botu sayfası: gönderinin kendi görseli og:image'dır.
             # Sayfadaki diğer görseller "benzer gönderiler" küçük resimleridir, alınmaz.
@@ -836,7 +888,8 @@ def _ig_embed(task_id, url, dest, sink=None):
         ext = os.path.splitext(path)[1].lower()
         if ext not in (".jpg", ".jpeg", ".png", ".webp"):
             ext = ".jpg"
-        name = "instagram_%s%s%s" % (code, ("_%d" % i) if len(images) > 1 else "", ext)
+        prefix = username if username else "instagram"
+        name = "%s_%s%s%s" % (prefix, code, ("_%d" % i) if len(images) > 1 else "", ext)
         target = os.path.join(dest, name)
         try:
             if sink:
