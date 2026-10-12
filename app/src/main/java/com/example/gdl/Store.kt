@@ -38,10 +38,9 @@ object Store {
     fun qualityLabel(value: String): String =
         QUALITY_OPTIONS.firstOrNull { it.second == value }?.first ?: "En iyi"
 
-    fun videoQuality(c: Context): String = prefs(c).getString("video_quality", QUALITY_BEST) ?: QUALITY_BEST
-    fun setVideoQuality(c: Context, q: String) {
-        prefs(c).edit().putString("video_quality", q).apply()
-    }
+    /** Varsayılan kalite her zaman "en iyi"; İndir ekranından tek seferlik değiştirilir. */
+    @Suppress("UNUSED_PARAMETER")
+    fun videoQuality(c: Context): String = QUALITY_BEST
 
     // ---- Altyazı ----
     const val SUBTITLE_OFF = "off"
@@ -68,6 +67,12 @@ object Store {
     fun subtitleEmbedded(c: Context): Boolean = prefs(c).getBoolean("subtitle_embedded", true)
     fun setSubtitleEmbedded(c: Context, v: Boolean) {
         prefs(c).edit().putBoolean("subtitle_embedded", v).apply()
+    }
+
+    /** true: video indirilirken kapak fotoğrafı da galeriye ayrı bir görsel olarak kaydedilir. */
+    fun saveCover(c: Context): Boolean = prefs(c).getBoolean("save_cover", false)
+    fun setSaveCover(c: Context, v: Boolean) {
+        prefs(c).edit().putBoolean("save_cover", v).apply()
     }
 
     private fun prefs(c: Context) = c.getSharedPreferences("gdl", Context.MODE_PRIVATE)

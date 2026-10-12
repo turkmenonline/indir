@@ -364,6 +364,17 @@ object Ui {
             overScrollMode = View.OVER_SCROLL_NEVER
             clipToPadding = false
             addView(row, FrameLayout.LayoutParams(WRAP, WRAP))
+            // Seçenekler kaydırılırken üstteki ViewPager2 yan sayfaya geçmesin:
+            // dokunuş başlar başlamaz ebeveynin yakalamasını engelle, bırakınca geri ver.
+            setOnTouchListener { v, ev ->
+                when (ev.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_MOVE ->
+                        v.parent?.requestDisallowInterceptTouchEvent(true)
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL ->
+                        v.parent?.requestDisallowInterceptTouchEvent(false)
+                }
+                false
+            }
         }
     }
 

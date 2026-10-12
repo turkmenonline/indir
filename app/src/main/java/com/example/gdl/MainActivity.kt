@@ -45,6 +45,8 @@ class MainActivity : AppCompatActivity() {
     // Bu ekranda seçilen kalite yalnızca bir sonraki indirme için geçerli;
     // Ayarlar'daki varsayılanı kalıcı olarak değiştirmez.
     private var selectedQuality: String = Store.QUALITY_BEST
+    private var selectedSubtitle: String = Store.SUBTITLE_OFF
+    private var selectedCover: Boolean = false
 
     private var activeDetailDialog: Dialog? = null
     private var activeDetailId: Long = -1L
@@ -108,22 +110,133 @@ class MainActivity : AppCompatActivity() {
         // değerle açılır, burada değiştirmek yalnızca bir sonraki indirmeyi
         // etkiler, Ayarlar'ı değiştirmez.
         selectedQuality = Store.videoQuality(this)
-        val qualityLabel = Ui.text(this, "Kalite", 13f, Ui.mutedClr(this), false)
-        val qualityChipsHolder = FrameLayout(this)
-        fun updateQualityChips() {
-            qualityChipsHolder.removeAllViews()
-            val chips = Ui.qualityChips(this, Store.QUALITY_OPTIONS, selectedQuality) { qVal ->
-                selectedQuality = qVal
-                updateQualityChips()
-            }
-            qualityChipsHolder.addView(chips, FrameLayout.LayoutParams(Ui.WRAP, Ui.WRAP))
+        // Satırda "Kalite ........ (En iyi)": değer eski kalite seçeneği gibi mavi hap.
+        // Hapa dokununca altında pop-up menü açılır, seçince kapanır.
+        val qualitySection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val qualityPill = Ui.text(this, Store.qualityLabel(selectedQuality), 13.5f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            maxLines = 1
         }
-        updateQualityChips()
+        // Hap = yazı + küçük aşağı ok; ok, dokununca seçim menüsü açılacağını belli eder.
+        val qualityPillBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(d(14), d(4), d(10), d(4))
+            background = Ui.ripple(Ui.shape(Ui.primary(this@MainActivity), Ui.dp(this@MainActivity, 999).toFloat()), Ui.dp(this@MainActivity, 999).toFloat())
+            elevation = d(1).toFloat()
+            addView(qualityPill, Ui.lp(Ui.WRAP, Ui.WRAP))
+            addView(Ui.text(this@MainActivity, "›", 17f, Color.WHITE, true).apply { rotation = 90f },
+                Ui.lp(Ui.WRAP, Ui.WRAP, l = d(5)))
+        }
+        fun showQualityMenu(anchor: View) {
+            val dark = Ui.isDark(this)
+            val menuWidth = d(132) // en uzun seçenek ("En iyi", "1440p") için yeterli
+            // Gölgenin kırpılmaması için menünün etrafında boşluk; gölge aşağı doğru
+            // daha uzağa düştüğü için alt pay daha büyük.
+            val padH = d(18)
+            val padTop = d(8)
+            val padBottom = d(36)
+            val menuBg = if (dark) Color.parseColor("#2C2C2E") else Color.WHITE
+            val menuStroke = if (dark) Color.parseColor("#545458") else Color.parseColor("#C7C7CC")
+            val dividerClr = if (dark) Color.parseColor("#48484A") else Color.parseColor("#D8D8DD")
+            val menu = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = Ui.shape(menuBg, Ui.dp(this@MainActivity, 14).toFloat(), menuStroke, d(1))
+                setPadding(0, d(4), 0, d(4))
+                elevation = d(8).toFloat()
+            }
+            val holder = FrameLayout(this).apply {
+                setPadding(padH, padTop, padH, padBottom)
+                clipToPadding = false
+                clipChildren = false
+                addView(menu, FrameLayout.LayoutParams(menuWidth, Ui.WRAP))
+            }
+            val popup = android.widget.PopupWindow(holder, menuWidth + padH * 2, Ui.WRAP, true).apply {
+                isOutsideTouchable = true
+                setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+                animationStyle = android.R.style.Animation_Dialog
+            }
+            Store.QUALITY_OPTIONS.forEachIndexed { i, (label, value) ->
+                if (i > 0) {
+                    menu.addView(View(this).apply { setBackgroundColor(dividerClr) },
+                        Ui.lp(Ui.MATCH, d(1), l = d(18), r = d(18)))
+                }
+                val selected = value == selectedQuality
+                val row = Ui.text(this, label, 16f,
+                    if (selected) Ui.primary(this) else Ui.textClr(this), selected).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    // Ui.text rakam içeren yazılara sabit genişlikli rakam (tnum) uygular;
+                    // "1" geniş kalıp "2160p"de 2 ile 1 arasında boşluk bırakıyordu.
+                    fontFeatureSettings = "pnum"
+                    setPadding(d(18), d(10), d(18), d(10))
+                    setOnClickListener {
+                        it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+                        selectedQuality = value
+                        qualityPill.text = label
+                        popup.dismiss()
+                    }
+                }
+                menu.addView(row, Ui.lp(Ui.MATCH, Ui.WRAP))
+            }
+            // Menünün sağ kenarı hapın sağ kenarıyla hizalı kalsın (gölge boşluğu hesaba katılır)
+            popup.showAsDropDown(anchor, anchor.width - (menuWidth + padH * 2) + padH, -d(2))
+        }
+        qualityPillBox.setOnClickListener {
+            it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+            showQualityMenu(it)
+        }
+        val qualityHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = d(44)
+            addView(Ui.text(this@MainActivity, "Kalite", 15f, Ui.textClr(this@MainActivity), false), Ui.lp(0, Ui.WRAP, 1f))
+            addView(qualityPillBox, Ui.lp(Ui.WRAP, Ui.WRAP))
+        }
+        qualitySection.addView(qualityHeader, Ui.lp(Ui.MATCH, Ui.WRAP))
+
+        // Altyazı ve kapak: anahtarlı satırlar, yalnızca bir sonraki indirme için.
+        // Altyazı açılınca dil seçenekleri görünür, kapalıyken gizlenir.
+        val subLangOptions = Store.SUBTITLE_OPTIONS.filter { it.second != Store.SUBTITLE_OFF }
+        selectedSubtitle = Store.subtitleLang(this)
+        selectedCover = Store.saveCover(this)
+        var lastSubLang = if (selectedSubtitle != Store.SUBTITLE_OFF) selectedSubtitle else Store.SUBTITLE_TR
+
+        fun switchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit): View =
+            LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(Ui.text(this@MainActivity, title, 15f, Ui.textClr(this@MainActivity), false), Ui.lp(0, Ui.WRAP, 1f))
+                addView(Ui.iosSwitch(this@MainActivity, checked, onChange), Ui.lp(Ui.WRAP, Ui.WRAP))
+            }
+
+        val subtitleChipsHolder = FrameLayout(this)
+        fun updateSubtitleChips() {
+            subtitleChipsHolder.removeAllViews()
+            if (selectedSubtitle == Store.SUBTITLE_OFF) {
+                subtitleChipsHolder.visibility = View.GONE
+                return
+            }
+            subtitleChipsHolder.visibility = View.VISIBLE
+            val chips = Ui.qualityChips(this, subLangOptions, selectedSubtitle) { v ->
+                selectedSubtitle = v
+                lastSubLang = v
+                updateSubtitleChips()
+            }
+            subtitleChipsHolder.addView(chips, FrameLayout.LayoutParams(Ui.WRAP, Ui.WRAP))
+        }
+        updateSubtitleChips()
+        val subtitleRow = switchRow("Altyazı", selectedSubtitle != Store.SUBTITLE_OFF) { on ->
+            selectedSubtitle = if (on) lastSubLang else Store.SUBTITLE_OFF
+            updateSubtitleChips()
+        }
+        val coverRow = switchRow("Kapak fotoğrafını da indir", selectedCover) { on -> selectedCover = on }
 
         val inputCard = Ui.card(this).apply {
             addView(input, Ui.lp(Ui.MATCH, Ui.WRAP))
-            addView(qualityLabel, Ui.lp(Ui.WRAP, Ui.WRAP, t = d(14), b = d(6)))
-            addView(qualityChipsHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
+            addView(qualitySection, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(8)))
+            addView(subtitleRow, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(14)))
+            addView(subtitleChipsHolder, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(8)))
+            addView(coverRow, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(10)))
             addView(buttons, Ui.lp(Ui.MATCH, Ui.WRAP, t = d(14)))
         }
 
@@ -222,6 +335,18 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // 1. Ekrana dönüldüğü an kartı güncel duruma eşitle
         refreshLiveDownloadBox()
+        // 2. Uygulama açılınca biten indirmelerin sonuç bildirimlerini temizle;
+        // yoksa uygulama simgesindeki sayı rozeti her indirmede artıp hiç gitmiyor.
+        clearResultNotifications()
+    }
+
+    private fun clearResultNotifications() {
+        try {
+            val nm = getSystemService(android.app.NotificationManager::class.java)
+            nm.activeNotifications
+                .filter { it.notification.channelId == DownloadService.CH_RESULT }
+                .forEach { nm.cancel(it.id) }
+        } catch (_: Throwable) {}
     }
 
     private val globalStateListener: () -> Unit = {
@@ -691,6 +816,8 @@ class MainActivity : AppCompatActivity() {
         val i = Intent(this, DownloadService::class.java).apply {
             putExtra(DownloadService.EXTRA_URL, url)
             putExtra("custom_quality", selectedQuality)
+            putExtra("custom_subtitle", selectedSubtitle)
+            putExtra("custom_cover", selectedCover)
         }
         startForegroundService(i)
         input.setText("")

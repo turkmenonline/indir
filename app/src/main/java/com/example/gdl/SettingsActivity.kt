@@ -566,54 +566,54 @@ class SettingsActivity : AppCompatActivity() {
         }
         updateThemeSegment()
 
-        // Video Kalitesi — varsayılan (İndir ekranında link başına değiştirilebilir)
-        val qualityCardHolder = FrameLayout(this)
-        fun updateQualitySegment() {
-            qualityCardHolder.removeAllViews()
-            val currentQuality = Store.videoQuality(this@SettingsActivity)
-            val chips = Ui.qualityChips(this@SettingsActivity, Store.QUALITY_OPTIONS, currentQuality) { qVal ->
-                if (Store.videoQuality(this@SettingsActivity) != qVal) {
-                    Store.setVideoQuality(this@SettingsActivity, qVal)
-                    updateQualitySegment()
-                    toast("Varsayılan kalite: ${Store.qualityLabel(qVal)}")
-                }
-            }
-            qualityCardHolder.addView(chips, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
-        }
-        updateQualitySegment()
-
-        // Altyazı: dil seçimi + göm/ayrı dosya anahtarı
-        val subtitleCardHolder = FrameLayout(this)
-        val subtitleSwitchHolder = FrameLayout(this)
-        fun updateSubtitleSwitch() {
-            subtitleSwitchHolder.removeAllViews()
-            val row = LinearLayout(this).apply {
+        // Altyazı: anahtar açılınca dil seçimi + göm/ayrı dosya anahtarı görünür
+        val subtitleHolder = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val subLangOptions = Store.SUBTITLE_OPTIONS.filter { it.second != Store.SUBTITLE_OFF }
+        var lastSubLang = Store.subtitleLang(this).let { if (it == Store.SUBTITLE_OFF) Store.SUBTITLE_TR else it }
+        fun updateSubtitleSection() {
+            subtitleHolder.removeAllViews()
+            val current = Store.subtitleLang(this@SettingsActivity)
+            val on = current != Store.SUBTITLE_OFF
+            fun row(title: String, checked: Boolean, onChange: (Boolean) -> Unit) = LinearLayout(this@SettingsActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                val labelView = Ui.text(this@SettingsActivity, "Videonun içine göm", 15f, Ui.textClr(this@SettingsActivity), false)
-                addView(labelView, Ui.lp(0, Ui.WRAP, 1f))
-                val sw = Ui.iosSwitch(this@SettingsActivity, Store.subtitleEmbedded(this@SettingsActivity)) { checked ->
+                addView(Ui.text(this@SettingsActivity, title, 15f, Ui.textClr(this@SettingsActivity), false), Ui.lp(0, Ui.WRAP, 1f))
+                addView(Ui.iosSwitch(this@SettingsActivity, checked, onChange), Ui.lp(Ui.WRAP, Ui.WRAP))
+            }
+            subtitleHolder.addView(row("Altyazıyı indir", on) { checked ->
+                Store.setSubtitleLang(this@SettingsActivity, if (checked) lastSubLang else Store.SUBTITLE_OFF)
+                toast(if (checked) "Altyazı: ${Store.subtitleLabel(lastSubLang)}" else "Altyazı kapalı")
+                updateSubtitleSection()
+            }, Ui.lp(Ui.MATCH, Ui.WRAP))
+            if (on) {
+                val chips = Ui.qualityChips(this@SettingsActivity, subLangOptions, current) { subVal ->
+                    if (Store.subtitleLang(this@SettingsActivity) != subVal) {
+                        lastSubLang = subVal
+                        Store.setSubtitleLang(this@SettingsActivity, subVal)
+                        updateSubtitleSection()
+                        toast("Altyazı: ${Store.subtitleLabel(subVal)}")
+                    }
+                }
+                subtitleHolder.addView(chips, Ui.lp(Ui.MATCH, Ui.WRAP, t = Ui.dp(this@SettingsActivity, 6), b = Ui.dp(this@SettingsActivity, 10)))
+                subtitleHolder.addView(row("Videonun içine göm", Store.subtitleEmbedded(this@SettingsActivity)) { checked ->
                     Store.setSubtitleEmbedded(this@SettingsActivity, checked)
                     toast(if (checked) "Altyazı videoya gömülecek" else "Altyazı ayrı .srt dosyası olarak inecek")
-                }
-                addView(sw, Ui.lp(Ui.WRAP, Ui.WRAP))
+                }, Ui.lp(Ui.MATCH, Ui.WRAP))
             }
-            subtitleSwitchHolder.addView(row, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
         }
-        fun updateSubtitleSegment() {
-            subtitleCardHolder.removeAllViews()
-            val currentSub = Store.subtitleLang(this@SettingsActivity)
-            val chips = Ui.qualityChips(this@SettingsActivity, Store.SUBTITLE_OPTIONS, currentSub) { subVal ->
-                if (Store.subtitleLang(this@SettingsActivity) != subVal) {
-                    Store.setSubtitleLang(this@SettingsActivity, subVal)
-                    updateSubtitleSegment()
-                    toast("Altyazı: ${Store.subtitleLabel(subVal)}")
-                }
-            }
-            subtitleCardHolder.addView(chips, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
-        }
-        updateSubtitleSegment()
-        updateSubtitleSwitch()
+        updateSubtitleSection()
+
+        // Kapak fotoğrafı: video indirirken küçük resmi de galeriye kaydet
+        val coverSwitchHolder = FrameLayout(this)
+        coverSwitchHolder.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(Ui.text(this@SettingsActivity, "Kapak fotoğrafını da kaydet", 15f, Ui.textClr(this@SettingsActivity), false), Ui.lp(0, Ui.WRAP, 1f))
+            addView(Ui.iosSwitch(this@SettingsActivity, Store.saveCover(this@SettingsActivity)) { checked ->
+                Store.setSaveCover(this@SettingsActivity, checked)
+                toast(if (checked) "Kapak fotoğrafı da kaydedilecek" else "Kapak fotoğrafı kaydedilmeyecek")
+            }, Ui.lp(Ui.WRAP, Ui.WRAP))
+        }, FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP))
 
         // Kart 2 (GÖRÜNÜM)
         val appearanceCard = Ui.card(this).apply {
@@ -624,27 +624,26 @@ class SettingsActivity : AppCompatActivity() {
             val divider2 = View(context).apply {
                 setBackgroundColor(Ui.line(context))
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(context, 1)).apply {
-                    setMargins(0, Ui.dp(context, 16), 0, Ui.dp(context, 16))
+                    setMargins(0, Ui.dp(context, 12), 0, Ui.dp(context, 12))
                 }
             }
             addView(divider2)
 
-            addView(label("Varsayılan Video Kalitesi"))
-            addView(helper("İndir ekranında link başına bunu değiştirebilirsin"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4), b = d(12)))
-            addView(qualityCardHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
+            addView(label("Altyazı"))
+            addView(helper("Elle hazırlanmış yoksa otomatik altyazıya düşülür"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(2), b = d(6)))
+            addView(subtitleHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
 
-            val divider3 = View(context).apply {
+            val divider4 = View(context).apply {
                 setBackgroundColor(Ui.line(context))
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(context, 1)).apply {
-                    setMargins(0, Ui.dp(context, 16), 0, Ui.dp(context, 16))
+                    setMargins(0, Ui.dp(context, 12), 0, Ui.dp(context, 12))
                 }
             }
-            addView(divider3)
+            addView(divider4)
 
-            addView(label("Altyazı"))
-            addView(helper("Elle hazırlanmış yoksa otomatik altyazıya düşülür"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(4), b = d(12)))
-            addView(subtitleCardHolder, Ui.lp(Ui.MATCH, Ui.WRAP, b = d(12)))
-            addView(subtitleSwitchHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
+            addView(label("Kapak Fotoğrafı"))
+            addView(helper("Kapak görseli Galeri'ye ayrı fotoğraf olarak iner"), Ui.lp(Ui.WRAP, Ui.WRAP, l = d(2), t = d(2), b = d(6)))
+            addView(coverSwitchHolder, Ui.lp(Ui.MATCH, Ui.WRAP))
         }
 
         album = Ui.field(this, "GalleryDl").apply {

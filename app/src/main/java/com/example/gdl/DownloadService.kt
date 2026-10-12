@@ -282,6 +282,8 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val rawUrl = intent?.getStringExtra(EXTRA_URL)
         val customQuality = intent?.getStringExtra("custom_quality") ?: ""
+        val customSubtitle = intent?.getStringExtra("custom_subtitle")
+        val customCover = if (intent?.hasExtra("custom_cover") == true) intent.getBooleanExtra("custom_cover", false) else null
         if (intent != null && intent.action == ACTION_CANCEL) {
             // Bildirimdeki "İptal" eylemi
             val cancelId = intent.getLongExtra(EXTRA_ID, -1L)
@@ -332,7 +334,7 @@ class DownloadService : Service() {
                 }
                 state.detail = "Hazırlanıyor..."
                 notifyGlobalStateChanged()
-                process(id, url, customQuality, platform, state)
+                process(id, url, customQuality, platform, state, customSubtitle, customCover)
             } finally {
                 runningTasks.remove(id)
                 futures.remove(id)
@@ -360,13 +362,16 @@ class DownloadService : Service() {
         }
     }
 
-    private fun process(id: Long, url: String, customQuality: String, platform: String, state: DownloadState) {
+    private fun process(id: Long, url: String, customQuality: String, platform: String, state: DownloadState,
+                        customSubtitle: String? = null, customCover: Boolean? = null) {
         val dir = File(cacheDir, "dl_$id").apply { mkdirs() }
         val cookieTmp = File(cacheDir, "cookies_job.txt")
         var log = ""
         var saved = 0
         var savedImages = 0
         var savedVideos = 0
+        var savedAudios = 0
+        var savedCovers = 0
         val savedFiles = mutableListOf<File>()
         var thumbnailBitmap: Bitmap? = null
         var success = false
@@ -419,8 +424,9 @@ class DownloadService : Service() {
             val updatesDir = File(filesDir, "python_updates")
             val updatesPath = if (updatesDir.exists()) updatesDir.absolutePath else ""
             val quality = customQuality.takeIf { it.isNotEmpty() } ?: Store.videoQuality(this)
-            val subtitleLang = Store.subtitleLang(this)
+            val subtitleLang = customSubtitle ?: Store.subtitleLang(this)
             val subtitleEmbed = Store.subtitleEmbedded(this)
+            val saveCover = customCover ?: Store.saveCover(this)
             val galleryTemplate = Store.galleryTemplate(this)
             val ytdlpTemplate = Store.ytdlpTemplate(this)
             val nativeDir = File(applicationInfo.nativeLibraryDir)
@@ -435,18 +441,33 @@ class DownloadService : Service() {
             Log.d("FFMPEG_FIX", "ffmpegPath=$ffmpegPath libDir=$ffmpegLibDir")
             log = Python.getInstance().getModule("dl")
                 .callAttr("run", id.toString(), url, dir.absolutePath, cookiePath, galleryTemplate, ytdlpTemplate, sink, updatesPath, quality, ffmpegPath, ffmpegLibDir,
-                    subtitleLang, subtitleEmbed)
+                    subtitleLang, subtitleEmbed, saveCover)
                 .toString()
 
             if (cancelledTasks.contains(id)) {
                 throw Exception("İptal edildi")
             }
 
-            for (f in dir.walkTopDown().filter { it.isFile }) {
+            // Kapak dosyaları ("kapak" klasörü) en sona bırakılır: yalnızca video/ses
+            // gerçekten kaydedildiyse galeriye eklenir.
+            val allFiles = dir.walkTopDown().filter { it.isFile }
+                .sortedBy { it.parentFile?.name == "kapak" }
+            for (f in allFiles) {
                 if (cancelledTasks.contains(id)) {
                     throw Exception("İptal edildi")
                 }
                 val ext = f.extension.lowercase()
+                if (f.parentFile?.name == "kapak") {
+                    if (savedVideos + savedAudios > 0 && f.length() > 0 &&
+                        MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)?.startsWith("image") == true
+                    ) {
+                        if (save(f, platform, cover = true)) {
+                            savedCovers++
+                            log += "\n[kapak] ${f.name}: kaydedildi"
+                        }
+                    }
+                    continue
+                }
                 if (ext == "srt" || ext == "vtt") {
                     // Altyazı videoya gömülemediyse (embed kapalı ya da ffmpeg yoktu)
                     // buraya ayrı bir dosya olarak düşer; Galeri'ye değil
@@ -467,12 +488,13 @@ class DownloadService : Service() {
                         if (save(f, platform)) {
                             savedFiles.add(f)
                             if (video) savedVideos++
+                            if (audio) savedAudios++
                             if (image) savedImages++
                         }
                     }
                 }
             }
-            saved = savedFiles.size
+            saved = savedFiles.size + savedCovers
             if (saved > 0) {
                 success = true
                 val thumbFile = savedFiles.first()
@@ -513,12 +535,13 @@ class DownloadService : Service() {
         cancelProgressNotifs()
 
         val ok = success
+        val coverNote = if (savedCovers > 0) " (kapak dahil)" else ""
         val detailText = when {
             (savedImages > 0) && (savedVideos == 0) -> if (savedImages == 1) "1 fotoğraf galeriye kaydedildi" else "$savedImages fotoğraf galeriye kaydedildi"
             (savedImages == 0) && (savedVideos > 0) -> if (savedVideos == 1) "1 video galeriye kaydedildi" else "$savedVideos video galeriye kaydedildi"
             else -> if (saved == 1) "1 dosya galeriye kaydedildi" else "$saved dosya galeriye kaydedildi"
         }
-        val contentText = if (ok) "$platform • $detailText" else "$platform • İndirilemedi"
+        val contentText = if (ok) "$platform • $detailText$coverNote" else "$platform • İndirilemedi"
 
         val pi = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
@@ -642,7 +665,7 @@ class DownloadService : Service() {
         return Bitmap.createScaledBitmap(bmp, targetWidth, targetHeight, true)
     }
 
-    private fun save(f: File, platform: String): Boolean {
+    private fun save(f: File, platform: String, cover: Boolean = false): Boolean {
         val mime = MimeTypeMap.getSingleton()
             .getMimeTypeFromExtension(f.extension.lowercase()) ?: return false
         val video = mime.startsWith("video")
@@ -675,6 +698,9 @@ class DownloadService : Service() {
         val cleanPlatform = platform.trim()
         
         // Nihai dosya adı formatı: "Platform video by DosyaAdı.mp4"
+        if (cover) {
+            cleanName = "${cleanName.substringBeforeLast('.')} kapak.${cleanName.substringAfterLast('.', "jpg")}"
+        }
         val finalName = if (cleanPlatform.isNotEmpty() && typePrefix.isNotEmpty()) {
             "$cleanPlatform $typePrefix $cleanName"
         } else if (typePrefix.isNotEmpty()) {
