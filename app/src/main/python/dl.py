@@ -806,6 +806,28 @@ def _ig_scan_cdn(page, log=None):
     return res
 
 
+_IG_VIDEO_PATTERNS = (
+    r'"video_versions"\s*:\s*\[\s*\{[^{}]*?"url"\s*:\s*"(https?:[^"]+)"',
+    r'"video_url"\s*:\s*"(https?:[^"]+)"',
+    r'"(?:browser_native_hd_url|playable_url_quality_hd|browser_native_sd_url|playable_url)"\s*:\s*"(https?:[^"]+)"',
+    r'<meta[^>]+property="og:video(?::secure_url)?"[^>]+content="([^"]+)"',
+)
+_IG_REEL_RE = re.compile(r"instagram\.com/(?:[A-Za-z0-9_.]+/)?(?:reel|reels|tv)/")
+
+
+def _ig_scan_video(page, log=None):
+    found = []
+    for pat in _IG_VIDEO_PATTERNS:
+        for m in re.finditer(pat, page):
+            u = _ig_unescape(m.group(1))
+            host = urllib.parse.urlparse(u).netloc
+            if ("cdninstagram" in host or "fbcdn" in host) and u not in found:
+                found.append(u)
+    if log is not None:
+        log.append("  video adayı: %d" % len(found))
+    return found
+
+
 def _ig_embed(task_id, url, dest, sink=None):
     """Giriş/çerez olmadan, herkese açık Instagram gönderisinin fotoğrafını embed sayfasından alır."""
     m = _IG_CODE_RE.search(url)
@@ -826,6 +848,30 @@ def _ig_embed(task_id, url, dest, sink=None):
         log.append("%s -> %d bayt, son adres: %s" % (suffix, len(page), final[:80]))
         if "accounts/login" in final:
             log.append("  giriş sayfasına yönlendirildi")
+            continue
+        if _IG_REEL_RE.search(url):
+            vids = _ig_scan_video(page, log)
+            for vurl in vids[:3]:
+                os.makedirs(dest, exist_ok=True)
+                target = os.path.join(dest, "instagram_%s.mp4" % code)
+                try:
+                    if sink:
+                        sink.updateProgress(-1, "Video indiriliyor")
+                    vreq = urllib.request.Request(vurl, headers={"User-Agent": _IG_UA, "Referer": "https://www.instagram.com/"})
+                    with urllib.request.urlopen(vreq, context=_create_ssl_context(), timeout=60) as resp, open(target, "wb") as out:
+                        shutil.copyfileobj(resp, out)
+                    if os.path.getsize(target) > 20480:
+                        log.append("instagram_%s.mp4 kaydedildi (%.1f MB)" % (code, os.path.getsize(target) / 1048576.0))
+                        return "\n".join(log)
+                    os.remove(target)
+                except Exception as e:
+                    log.append("video indirilemedi: %s: %s" % (type(e).__name__, e))
+                    try:
+                        if os.path.exists(target):
+                            os.remove(target)
+                    except Exception:
+                        pass
+            log.append("  reel: video bulunamadı, kapak görselleri kaydedilmiyor")
             continue
         if ua:
             # Önizleme botu sayfası: gönderinin kendi görseli og:image'dır.
