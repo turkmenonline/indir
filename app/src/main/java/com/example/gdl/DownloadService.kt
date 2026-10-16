@@ -525,11 +525,12 @@ class DownloadService : Service() {
             return
         }
 
+        val netHeader = "Ağ: ${Store.networkLabel(this)}\n"
         if (success) {
             val status = if (saved == 1) "1 dosya" else "$saved dosya"
-            Store.upsert(this, id, url, status, log.takeLast(3000))
+            Store.upsert(this, id, url, status, netHeader + log.takeLast(8000))
         } else {
-            Store.upsert(this, id, url, STATUS_INTERRUPTED, log.takeLast(3000))
+            Store.upsert(this, id, url, STATUS_INTERRUPTED, netHeader + log.takeLast(8000))
         }
         notifyGlobalStateChanged()
         cancelProgressNotifs()

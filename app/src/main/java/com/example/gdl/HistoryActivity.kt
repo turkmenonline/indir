@@ -2,6 +2,8 @@ package com.example.gdl
 
 import android.app.AlertDialog
 import android.app.Dialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -20,14 +22,33 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class HistoryActivity : AppCompatActivity() {
     private lateinit var historyListLayout: LinearLayout
     private lateinit var mainContent: LinearLayout
     private val currentIndex = 1
     private var hist: List<JSONObject> = emptyList()
+    private var pendingExportText: String = ""
+
+    private val exportLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            contentResolver.openOutputStream(uri)?.use {
+                it.write(pendingExportText.toByteArray(Charsets.UTF_8))
+            }
+            Toast.makeText(this, "TXT kaydedildi", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Kaydedilemedi: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
@@ -254,6 +275,60 @@ class HistoryActivity : AppCompatActivity() {
         historyListLayout.addView(bottomSpacer)
     }
 
+    /** Log metninden kullanıcıya anlamlı, kısa bir olası neden çıkarır. */
+    private fun diagnose(status: String, log: String): String? {
+        val l = log.lowercase()
+        fun has(vararg k: String) = k.any { l.contains(it) }
+        return when {
+            has("empty media response", "redirect to login", "accounts/login", "login required", "log in to") ->
+                "Instagram bu istemciye medya vermedi (giriş duvarı). Genelde bağlı olduğun ağın IP'si kısıtlandığında olur. Wi-Fi ↔ mobil veri değiştirip birkaç dakika sonra tekrar dene."
+            has("sign in to confirm") ->
+                "YouTube bot doğrulaması istiyor. Ağı değiştirip tekrar dene."
+            has("error 429", "too many requests") ->
+                "Çok fazla istek: site geçici olarak sınırladı. Biraz bekle, ağı değiştir."
+            has("unable to resolve host", "network is unreachable", "timed out", "connection reset", "name or service not known", "failed to resolve") ->
+                "Ağ/bağlantı hatası. İnternet bağlantını kontrol et."
+            has("private video", "this video is private", "video unavailable", "has been removed", "not available in your country") ->
+                "İçerik özel, silinmiş ya da bölgende kullanılamıyor."
+            has("unsupported url") ->
+                "Bu link desteklenmiyor."
+            has("requested format is not available") ->
+                "İstenen kalite/format yok. Kaliteyi değiştirip dene."
+            status.contains("Yarıda kaldı") ->
+                "İndirme yarıda kesildi (uygulama kapatıldı ya da iptal edildi)."
+            else -> null
+        }
+    }
+
+    /** Paylaşılabilir tam rapor metni. */
+    private fun buildReport(h: JSONObject): String {
+        val url = h.optString("url")
+        val status = h.optString("status")
+        val log = h.optString("log")
+        val ts = h.optLong("timestamp", h.optLong("id", 0L))
+        val dateStr = if (ts > 0L) {
+            SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale("tr", "TR")).format(Date(ts))
+        } else "-"
+        val appVer = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+        } catch (_: Throwable) { "?" }
+        val sb = StringBuilder()
+        sb.append("indir - İndirme Raporu\n")
+        sb.append("Uygulama: ").append(appVer).append('\n')
+        sb.append("Cihaz: ").append(android.os.Build.MANUFACTURER).append(' ').append(android.os.Build.MODEL)
+            .append(" (Android ").append(android.os.Build.VERSION.RELEASE)
+            .append(", API ").append(android.os.Build.VERSION.SDK_INT).append(")\n")
+        sb.append("Rapor anındaki ağ: ").append(Store.networkLabel(this)).append('\n')
+        sb.append("Platform: ").append(Store.getPlatformName(url)).append('\n')
+        sb.append("Tarih: ").append(dateStr).append('\n')
+        sb.append("Durum: ").append(status).append('\n')
+        diagnose(status, log)?.let { sb.append("Olası neden: ").append(it).append('\n') }
+        sb.append("URL: ").append(url).append("\n\n")
+        sb.append("---------- LOG ----------\n")
+        sb.append(log.ifBlank { "(log boş)" })
+        return sb.toString()
+    }
+
     private fun showItem(h: JSONObject) {
         val url = h.getString("url")
         val dialog = Dialog(this)
@@ -292,17 +367,60 @@ class HistoryActivity : AppCompatActivity() {
 
         // Hata Kodları ve URL Alanı (İçi hafif gömülü: Açık modda #EBEBF0, Koyu modda #141416, kaydırılabilir ScrollView, monospace/SpaceGrotesk font)
         val codeBoxBg = if (Ui.isDark(context)) Color.parseColor("#141416") else Color.parseColor("#EBEBF0")
-        val codeText = url + "\n\n" + h.optString("log", "")
+        val logStr = h.optString("log", "")
+        val diag = if (isSuccess) null else diagnose(status, logStr)
+        if (diag != null) {
+            val diagTv = Ui.text(context, "Olası neden: " + diag, 13.5f, Ui.ERR, false).apply {
+                setPadding(Ui.dp(context, 12), Ui.dp(context, 10), Ui.dp(context, 12), Ui.dp(context, 10))
+                background = Ui.shape(Ui.ERR_BG, Ui.dp(context, 12).toFloat())
+            }
+            rootLayout.addView(diagTv, Ui.lp(Ui.MATCH, Ui.WRAP, b = Ui.dp(context, 12)))
+        }
+        val codeText = url + "\n\n" + logStr
         val codeTv = Ui.text(context, codeText, 12.5f, Ui.textClr(context), false).apply {
             typeface = Typeface.MONOSPACE
+            setTextIsSelectable(true)
             setPadding(Ui.dp(context, 12), Ui.dp(context, 12), Ui.dp(context, 12), Ui.dp(context, 12))
         }
         val codeScroll = ScrollView(context).apply {
             background = Ui.shape(codeBoxBg, Ui.dp(context, 12).toFloat())
             addView(codeTv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         }
-        val codeScrollParams = Ui.lp(Ui.MATCH, Ui.dp(context, 260), b = Ui.dp(context, 16))
+        val boxHeight = (resources.displayMetrics.heightPixels * 0.38).toInt()
+        val codeScrollParams = Ui.lp(Ui.MATCH, boxHeight, b = Ui.dp(context, 12))
         rootLayout.addView(codeScroll, codeScrollParams)
+
+        // Rapor: kopyala / paylaş / TXT kaydet
+        val reportRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        val copyBtn = Ui.button(context, "Kopyala", Ui.Kind.OUTLINE) {
+            val cm = getSystemService(ClipboardManager::class.java)
+            cm?.setPrimaryClip(ClipData.newPlainText("indir rapor", buildReport(h)))
+            Toast.makeText(context, "Rapor kopyalandı", Toast.LENGTH_SHORT).show()
+        }
+        val shareBtn = Ui.button(context, "Paylaş", Ui.Kind.OUTLINE) {
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "indir raporu")
+                putExtra(Intent.EXTRA_TEXT, buildReport(h))
+            }
+            try {
+                startActivity(Intent.createChooser(send, "Raporu paylaş"))
+            } catch (_: Exception) {
+                Toast.makeText(context, "Paylaşılamadı", Toast.LENGTH_SHORT).show()
+            }
+        }
+        val txtBtn = Ui.button(context, "TXT", Ui.Kind.OUTLINE) {
+            pendingExportText = buildReport(h)
+            try {
+                exportLauncher.launch("indir_rapor_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".txt")
+            } catch (_: Exception) {
+                Toast.makeText(context, "Dosya seçici açılamadı", Toast.LENGTH_SHORT).show()
+            }
+        }
+        reportRow.addView(copyBtn, Ui.lp(0, Ui.WRAP, 1f, r = Ui.dp(context, 4)))
+        reportRow.addView(shareBtn, Ui.lp(0, Ui.WRAP, 1f, l = Ui.dp(context, 4), r = Ui.dp(context, 4)))
+        reportRow.addView(txtBtn, Ui.lp(0, Ui.WRAP, 1f, l = Ui.dp(context, 4)))
+        rootLayout.addView(reportRow, Ui.lp(Ui.MATCH, Ui.WRAP, b = Ui.dp(context, 12)))
 
         // Alt Butonlar (Yan yana iki adet tam oval radius 999f buton veya başarılı ise tek Kapat butonu)
         val buttonRow = LinearLayout(context).apply {

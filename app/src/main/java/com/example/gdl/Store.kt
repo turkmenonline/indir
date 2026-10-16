@@ -187,6 +187,24 @@ object Store {
         prefs(c).edit().putString("history", arr.toString()).apply()
     }
 
+    /** Rapor/log için o anki ağ türü (Wi-Fi, Mobil veri, VPN...). */
+    fun networkLabel(c: Context): String {
+        try {
+            val cm = c.getSystemService(android.net.ConnectivityManager::class.java) ?: return "bilinmiyor"
+            val net = cm.activeNetwork ?: return "bağlantı yok"
+            val caps = cm.getNetworkCapabilities(net) ?: return "bağlantı yok"
+            return when {
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) -> "VPN"
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> "Mobil veri"
+                caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+                else -> "bilinmiyor"
+            }
+        } catch (_: Throwable) {
+            return "bilinmiyor"
+        }
+    }
+
     fun getPlatformName(url: String): String {
         val host = try {
             url.toUri().host ?: url
