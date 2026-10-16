@@ -3,6 +3,7 @@ package com.example.gdl
 import android.app.AlertDialog
 import android.app.Dialog
 import android.content.ClipData
+import android.content.ComponentName
 import android.content.ClipboardManager
 import android.content.Intent
 import android.graphics.Color
@@ -286,6 +287,8 @@ class HistoryActivity : AppCompatActivity() {
                 "YouTube bot doğrulaması istiyor. Ağı değiştirip tekrar dene."
             has("error 429", "too many requests") ->
                 "Çok fazla istek: site geçici olarak sınırladı. Biraz bekle, ağı değiştir."
+            has("403 forbidden", "http error 403", "error 403", "unexpected response from webpage") ->
+                "Site isteği normal şekilde yanıtlamadı (403 / beklenmeyen yanıt). Genelde sitenin bot koruması ya da ağ IP'si yüzünden olur. Ağ değiştirince de aynıysa, site bu istemciyi engelliyor demektir."
             has("unable to resolve host", "network is unreachable", "timed out", "connection reset", "name or service not known", "failed to resolve") ->
                 "Ağ/bağlantı hatası. İnternet bağlantını kontrol et."
             has("private video", "this video is private", "video unavailable", "has been removed", "not available in your country") ->
@@ -294,8 +297,10 @@ class HistoryActivity : AppCompatActivity() {
                 "Bu link desteklenmiyor."
             has("requested format is not available") ->
                 "İstenen kalite/format yok. Kaliteyi değiştirip dene."
+            has("kullanıcı tarafından iptal") ->
+                "İndirmeyi sen iptal ettin."
             status.contains("Yarıda kaldı") ->
-                "İndirme yarıda kesildi (uygulama kapatıldı ya da iptal edildi)."
+                "İndirme başarısız oldu. Sebep için aşağıdaki logdaki hata satırına bak."
             else -> null
         }
     }
@@ -318,7 +323,6 @@ class HistoryActivity : AppCompatActivity() {
         sb.append("Cihaz: ").append(android.os.Build.MANUFACTURER).append(' ').append(android.os.Build.MODEL)
             .append(" (Android ").append(android.os.Build.VERSION.RELEASE)
             .append(", API ").append(android.os.Build.VERSION.SDK_INT).append(")\n")
-        sb.append("Rapor anındaki ağ: ").append(Store.networkLabel(this)).append('\n')
         sb.append("Platform: ").append(Store.getPlatformName(url)).append('\n')
         sb.append("Tarih: ").append(dateStr).append('\n')
         sb.append("Durum: ").append(status).append('\n')
@@ -398,15 +402,28 @@ class HistoryActivity : AppCompatActivity() {
             Toast.makeText(context, "Rapor kopyalandı", Toast.LENGTH_SHORT).show()
         }
         val shareBtn = Ui.button(context, "Paylaş", Ui.Kind.OUTLINE) {
-            val send = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_SUBJECT, "indir raporu")
-                putExtra(Intent.EXTRA_TEXT, buildReport(h))
-            }
             try {
-                startActivity(Intent.createChooser(send, "Raporu paylaş"))
-            } catch (_: Exception) {
-                Toast.makeText(context, "Paylaşılamadı", Toast.LENGTH_SHORT).show()
+                val dir = java.io.File(cacheDir, "reports").apply { mkdirs() }
+                dir.listFiles()?.forEach { it.delete() }
+                val file = java.io.File(
+                    dir,
+                    "indir_rapor_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".txt"
+                )
+                file.writeText(buildReport(h), Charsets.UTF_8)
+                val uri = androidx.core.content.FileProvider.getUriForFile(context, "$packageName.fileprovider", file)
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_SUBJECT, "indir raporu")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    clipData = ClipData.newRawUri("indir rapor", uri)
+                }
+                val chooser = Intent.createChooser(send, "Raporu paylaş").apply {
+                    putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(context, ShareActivity::class.java)))
+                }
+                startActivity(chooser)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Paylaşılamadı: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
         val txtBtn = Ui.button(context, "TXT", Ui.Kind.OUTLINE) {

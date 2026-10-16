@@ -1013,7 +1013,12 @@ def run(task_id, url, out_dir, cookies, gallery_template, ytdlp_template, sink, 
         err = result.get("err")
         if err is not None and not isinstance(err, CancelledDownload):
             raise err
-        return result.get("out", "")
+        out = result.get("out", "")
+        try:
+            vline = "[sürümler] %s • python %s" % (get_versions(), sys.version.split()[0])
+        except Exception:
+            vline = ""
+        return (vline + "\n" + out) if vline else out
     finally:
         active_threads.pop(tid_str, None)
         if not w.is_alive():
