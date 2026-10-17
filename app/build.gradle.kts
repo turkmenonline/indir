@@ -24,7 +24,10 @@ android {
         targetSdk = 34
         versionCode = 3
         versionName = "2.1"
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        // Sadece gerçek arm64 cihazlar için (ör. Samsung A35 5G / SM-A356E).
+        // x86_64 yalnızca emülatörde test etmek isteyenlere lazım; kaldırılınca
+        // Chaquopy/Python, ffmpeg gibi tüm native .so'lar tek ABI'ye iner ve APK küçülür.
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
     buildFeatures {
         compose = true
@@ -53,9 +56,11 @@ dependencies {
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.viewpager2:viewpager2:1.1.0")
-    implementation("io.coil-kt:coil:2.6.0")
     implementation("com.github.Dimezis:BlurView:version-2.0.4")
-    implementation("io.github.junkfood02.youtubedl-android:library:0.17.3")
+    // Not: "youtubedl-android:library" (yt-dlp/aria2c/python-for-android'ı ABI başına
+    // kendi içinde paketleyen asıl büyük modül) kodda hiç kullanılmıyor — indirme işini
+    // zaten Chaquopy üzerinden Python (dl.py) yapıyor. Sadece ffmpeg modülü (altyazı
+    // gömme için MainActivity/DownloadService'te kullanılıyor) kalsın.
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.17.3")
     implementation(platform("androidx.compose:compose-bom:2024.10.01"))
     implementation("androidx.compose.ui:ui")

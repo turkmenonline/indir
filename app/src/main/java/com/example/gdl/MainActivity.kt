@@ -24,6 +24,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -38,6 +39,7 @@ import com.yausername.ffmpeg.FFmpeg
 
 class MainActivity : AppCompatActivity() {
     private lateinit var input: EditText
+    private var rootFrame: FrameLayout? = null
     private lateinit var goButton: Button
     private lateinit var mainContent: LinearLayout
     private lateinit var activeDownloadsContainer: LinearLayout
@@ -281,9 +283,13 @@ class MainActivity : AppCompatActivity() {
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Ui.bg(this@MainActivity))
+            // Link kutusundan odağı alıp buraya verebilmek için (klavye kendiliğinden açılmasın)
+            isFocusable = true
+            isFocusableInTouchMode = true
             addView(scroll, FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH))
             addView(navBar, navParams)
         }
+        rootFrame = root
         setContentView(root)
         Ui.setupEdgeToEdge(this, root)
         handleIntent(intent)
@@ -328,6 +334,36 @@ class MainActivity : AppCompatActivity() {
             } else {
                 updateOpenDetailDialog()
             }
+        }
+    }
+
+    override fun onPause() {
+        // Başka ekrana (Ayarlar, Geçmiş...) giderken link kutusundan odağı al ve klavyeyi kapat;
+        // yoksa geri dönünce Android klavyeyi kendiliğinden tekrar açıyor.
+        releaseInputFocus()
+        super.onPause()
+    }
+
+    // Link kutusunun dışına dokunulunca odağı bırak ve klavyeyi kapat
+    private fun releaseFocusIfTouchOutside(ev: MotionEvent) {
+        try {
+            val f = currentFocus
+            if (f is EditText) {
+                val r = android.graphics.Rect()
+                f.getGlobalVisibleRect(r)
+                if (!r.contains(ev.rawX.toInt(), ev.rawY.toInt())) releaseInputFocus()
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun releaseInputFocus() {
+        try {
+            val imm = getSystemService(InputMethodManager::class.java)
+            imm?.hideSoftInputFromWindow(input.windowToken, 0)
+            input.clearFocus()
+            rootFrame?.requestFocus()
+        } catch (_: Throwable) {
         }
     }
 
@@ -756,6 +792,7 @@ class MainActivity : AppCompatActivity() {
                 touchDownX = ev.rawX
                 touchDownY = ev.rawY
                 isHorizontalSwipe = false
+                releaseFocusIfTouchOutside(ev)
             }
             MotionEvent.ACTION_MOVE -> {
                 val deltaX = ev.rawX - touchDownX
